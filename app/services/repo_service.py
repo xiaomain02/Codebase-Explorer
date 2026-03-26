@@ -1,3 +1,4 @@
+import ast
 import shutil
 import zipfile
 from pathlib import Path
@@ -87,6 +88,63 @@ class RepoService:
                 )
             )
         return modules
+
+    def _parse_function_node(self, node: ast.FunctionDef) -> dict:
+        args = []
+        for a in node.args.args:
+            if a.arg == 'self':
+                continue
+            args.append(a.arg)
+        if node.args.vararg:
+            args.append('*' + node.args.vararg.arg)
+        if node.args.kwarg:
+            args.append('**' + node.args.kwarg.arg)
+        return {
+            'name': node.name,
+            'args': args,
+            'docstring': ast.get_docstring(node),
+        }
+
+    def _parse_class_node(self, node: ast.ClassDef) -> dict:
+        methods = []
+        for item in node.body:
+            if isinstance(item, ast.FunctionDef):
+                methods.append(self._parse_function_node(item))
+        bases = [ast.unparse(base) if hasattr(ast, 'unparse') else getattr(base, 'id', str(base)) for base in node.bases]
+        return {
+            'name': node.name,
+            'bases': bases,
+            'docstring': ast.get_docstring(node),
+            'methods': methods,
+        }
+
+    def _parse_python_file(self, file_path: Path, repo_root: Path) -> dict:
+        try:
+            content = file_path.read_text(encoding='utf-8')
+            tree = ast.parse(content)
+        except (UnicodeDecodeError, SyntaxError, FileNotFoundError):
+            return {'file_path': str(file_path.relative_to(repo_root)), 'functions': [], 'classes': []}
+
+        functions = []
+        classes = []
+
+        for node in tree.body:
+            if isinstance(node, ast.FunctionDef):
+                functions.append(self._parse_function_node(node))
+            elif isinstance(node, ast.ClassDef):
+                classes.append(self._parse_class_node(node))
+
+        return {
+            'file_path': str(file_path.relative_to(repo_root).as_posix()),
+            'functions': functions,
+            'classes': classes,
+        }
+
+    def get_structure(self, repo_id: str) -> list[dict]:
+        extracted = Path(self.storage.get_repo_meta(repo_id)['extracted_path'])
+        py_files = sorted(extracted.rglob('*.py'))
+        structure = [self._parse_python_file(path, extracted) for path in py_files if path.is_file()]
+        return structure
 
     def get_summary(self, repo_id: str) -> str:
         modules = self.get_modules(repo_id)

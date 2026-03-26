@@ -3,6 +3,7 @@ from fastapi import APIRouter, File, UploadFile
 from app.schemas.modules import RepoModulesResponse
 from app.schemas.qa import AskRequest, AskResponse
 from app.schemas.repo import UploadRepoResponse
+from app.schemas.structure import RepoStructureResponse
 from app.schemas.summary import RepoSummaryResponse
 from app.schemas.tree import RepoTreeResponse
 from app.services.repo_service import RepoService
@@ -30,6 +31,11 @@ def get_modules(repo_id: str) -> RepoModulesResponse:
 @router.get('/{repo_id}/summary', response_model=RepoSummaryResponse)
 def get_summary(repo_id: str) -> RepoSummaryResponse:
     return RepoSummaryResponse(repo_id=repo_id, summary=service.get_summary(repo_id))
+
+
+@router.get('/{repo_id}/structure', response_model=RepoStructureResponse)
+def get_structure(repo_id: str) -> RepoStructureResponse:
+    return RepoStructureResponse(repo_id=repo_id, files=service.get_structure(repo_id))
 
 
 @router.post('/{repo_id}/ask', response_model=AskResponse)
