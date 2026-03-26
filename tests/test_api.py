@@ -58,6 +58,29 @@ def test_repo_endpoints_flow():
     assert summary_response.status_code == 200
     assert 'summary' in summary_response.json()
 
+
+def test_repo_structure_parsing():
+    upload_response = client.post(
+        '/repo/upload',
+        files={'file': ('demo.zip', make_zip(), 'application/zip')},
+    )
+    assert upload_response.status_code == 200
+    repo_id = upload_response.json()['repo_id']
+
+    structure_response = client.get(f'/repo/{repo_id}/structure')
+    assert structure_response.status_code == 200
+
+    structure_data = structure_response.json()
+    assert structure_data['repo_id'] == repo_id
+    assert any(f['file_path'] == 'app/service.py' for f in structure_data['files'])
+
+    service_file = next(f for f in structure_data['files'] if f['file_path'] == 'app/service.py')
+    assert any(func['name'] == 'run' for func in service_file['functions'])
+
+    summary_response = client.get(f'/repo/{repo_id}/summary')
+    assert summary_response.status_code == 200
+    assert 'summary' in summary_response.json()
+
     ask_response = client.post(f'/repo/{repo_id}/ask', json={'question': 'Что делает main?'})
     assert ask_response.status_code == 200
     assert 'answer' in ask_response.json()
