@@ -1,7 +1,7 @@
 import requests
 
 if __name__ == '__main__':
-    with open('repo_for_test_upload.zip', 'rb') as f:
+    with open('tests/repo_for_test_upload.zip', 'rb') as f:
         response = requests.post('http://localhost:8000/repo/upload', files={'file': f})
 
     repo_info = response.json()
