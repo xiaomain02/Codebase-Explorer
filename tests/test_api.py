@@ -73,6 +73,8 @@ def test_repo_structure_parsing():
     structure_data = structure_response.json()
     assert structure_data['repo_id'] == repo_id
     assert any(f['file_path'] == 'app/service.py' for f in structure_data['files'])
+    assert structure_data['readme'] is not None
+
 
     service_file = next(f for f in structure_data['files'] if f['file_path'] == 'app/service.py')
     assert any(func['name'] == 'run' for func in service_file['functions'])
