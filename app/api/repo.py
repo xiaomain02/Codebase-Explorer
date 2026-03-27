@@ -3,7 +3,7 @@ from fastapi import APIRouter, File, UploadFile
 from app.schemas.modules import RepoModulesResponse
 from app.schemas.qa import AskRequest, AskResponse
 from app.schemas.repo import UploadRepoResponse
-from app.schemas.structure import RepoStructureResponse
+from app.schemas.structure import RepoStructureResponse, FolderStructure
 from app.schemas.summary import RepoSummaryResponse
 from app.schemas.tree import RepoTreeResponse
 from app.services.repo_service import RepoService
@@ -33,11 +33,20 @@ def get_summary(repo_id: str) -> RepoSummaryResponse:
     return RepoSummaryResponse(repo_id=repo_id, summary=service.get_summary(repo_id))
 
 
+@router.get('/{repo_id}/structure/{path:path}', response_model=RepoStructureResponse)
+def get_structure(repo_id: str, path: str = "") -> RepoStructureResponse:
+    structure_data = service.get_structure(repo_id, path)
+    # README находится внутри структуры папки; для корня это readme корневой директории
+    return RepoStructureResponse(
+        repo_id=repo_id,
+        structure=FolderStructure(**structure_data),
+        readme=structure_data.get('readme')
+    )
+
+
 @router.get('/{repo_id}/structure', response_model=RepoStructureResponse)
-def get_structure(repo_id: str) -> RepoStructureResponse:
-    files = service.get_structure(repo_id)
-    readme = service._read_readme(repo_id)
-    return RepoStructureResponse(repo_id=repo_id, files=files, readme=readme)
+def get_structure_root(repo_id: str) -> RepoStructureResponse:
+    return get_structure(repo_id, "")
 
 
 @router.post('/{repo_id}/ask', response_model=AskResponse)

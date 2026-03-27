@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pydantic import BaseModel
 
 
@@ -20,7 +22,17 @@ class FileStructure(BaseModel):
     classes: list[ClassInfo] = []
 
 
+class FolderStructure(BaseModel):
+    path: str
+    files: list[FileStructure] = []
+    subfolders: list[FolderStructure] = []
+    summary: str | None = None
+    readme: str | None = None
+
+
 class RepoStructureResponse(BaseModel):
     repo_id: str
-    files: list[FileStructure] = []
+    structure: FolderStructure
     readme: str | None = None
+
+
