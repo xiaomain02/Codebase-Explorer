@@ -1,6 +1,7 @@
 import ast
 import shutil
 import zipfile
+from collections import defaultdict
 from pathlib import Path
 
 from fastapi import UploadFile
@@ -139,16 +140,170 @@ class RepoService:
             'functions': functions,
             'classes': classes,
         }
+    def _get_analysis_root(self, extracted: Path) -> Path:
+        """Определяет корневую папку для анализа (учитывает вложенность архива)"""
+        children = list(extracted.iterdir())
+        if len(children) == 1 and children[0].is_dir():
+            return children[0]
+        return extracted
 
-    def get_structure(self, repo_id: str) -> list[dict]:
-        extracted = Path(self.storage.get_repo_meta(repo_id)['extracted_path'])
-        py_files = sorted(extracted.rglob('*.py'))
-        structure = [self._parse_python_file(path, extracted) for path in py_files if path.is_file()]
-        return structure
+    def _get_folder_info(self, folder: Path, repo_root: Path) -> dict:
+        """Получает информацию о папке для списка subfolders"""
+        py_files = list(folder.rglob('*.py'))
+        subfolders = [item for item in folder.iterdir() if item.is_dir() and item.name not in IGNORED_DIRS]
 
-    def _read_readme(self, repo_id: str) -> str | None:
+        return {
+            'name': folder.name,
+            'path': str(folder.relative_to(repo_root).as_posix()),
+            'file_count': len([f for f in py_files if f.is_file()]),
+            'subfolder_count': len(subfolders),
+            'summary': None,  # Пока без summary для subfolders в списке
+        }
+
+    def _generate_folder_summary(self, folder: Path, file_structures: list[dict], repo_root: Path) -> str:
+        """Генерирует summary для конкретной папки"""
+        folder_name = folder.name
+        if str(folder.relative_to(repo_root).as_posix()) == '.':
+            folder_name = 'корневая папка'
+
+        # Собираем статистику
+        all_functions = []
+        all_classes = []
+        for file_info in file_structures:
+            all_functions.extend([f['name'] for f in file_info['functions']])
+            all_classes.extend([c['name'] for c in file_info['classes']])
+
+        if not file_structures:
+            # Если нет Python-файлов, но есть другие файлы — показываем их названия
+            non_py_files = [f.name for f in folder.iterdir() if f.is_file() and f.suffix.lower() != '.py']
+            if non_py_files:
+                names = ', '.join(non_py_files[:10])
+                more = f', и еще {len(non_py_files)-10} файл(ов)' if len(non_py_files) > 10 else ''
+                return f"Папка {folder_name} не содержит .py файлов; есть другие файлы: {names}{more}."
+            return f"Папка {folder_name} не содержит Python файлов."
+
+        # Пока заглушка - потом заменить на LLM
+        return self._generate_folder_summary_stub(folder_name, file_structures, all_functions, all_classes)
+
+    def _generate_folder_summaries(self, repo_root: Path, file_structures: list[dict]) -> list[dict]:
+        """Генерирует summaries для папок на основе структуры файлов"""
+        # Группируем файлы по папкам
+        folder_files = defaultdict(list)
+        for file_info in file_structures:
+            folder_path = str(Path(file_info['file_path']).parent)
+            if folder_path == '.':
+                folder_path = ''  # корневая папка
+            folder_files[folder_path].append(file_info)
+
+        summaries = []
+        for folder_path, files in folder_files.items():
+            # Собираем ключевую информацию о папке
+            all_functions = []
+            all_classes = []
+            for file_info in files:
+                all_functions.extend([f['name'] for f in file_info['functions']])
+                all_classes.extend([c['name'] for c in file_info['classes']])
+
+            # Пока заглушка - потом заменить на LLM
+            summary_text = self._generate_folder_summary_stub(folder_path, files, all_functions, all_classes)
+
+            summaries.append({
+                'folder_path': folder_path or '.',
+                'summary': summary_text,
+                'file_count': len(files),
+                'key_functions': all_functions[:10],  # ограничиваем для краткости
+                'key_classes': all_classes[:10],
+            })
+
+        return summaries
+
+    def _generate_folder_summary_stub(self, folder_path: str, files: list[dict], functions: list[str], classes: list[str]) -> str:
+        """Заглушка для генерации summary папки - потом заменить на LLM"""
+        folder_name = folder_path.split('/')[-1] if folder_path else 'корневая папка'
+
+        if folder_name in ['api', 'routes', 'endpoints']:
+            return f"Папка {folder_name} содержит API эндпоинты и обработчики запросов."
+        elif folder_name in ['services', 'logic', 'business']:
+            return f"Папка {folder_name} реализует бизнес-логику приложения."
+        elif folder_name in ['models', 'schemas', 'types']:
+            return f"Папка {folder_name} содержит модели данных и схемы валидации."
+        elif folder_name in ['utils', 'helpers', 'common']:
+            return f"Папка {folder_name} содержит вспомогательные функции и утилиты."
+        elif folder_name in ['tests', 'test']:
+            return f"Папка {folder_name} содержит тесты для проверки функциональности."
+        else:
+            func_count = len(functions)
+            class_count = len(classes)
+            file_count = len(files)
+            return f"Папка {folder_name} содержит {file_count} Python файлов с {class_count} классами и {func_count} функциями."
+    def _read_readme_from_repo_id(self, repo_id: str) -> str | None:
+        """Читает README для репозитория по repo_id"""
         extracted = Path(self.storage.get_repo_meta(repo_id)['extracted_path'])
-        
+        return self._read_readme(extracted)
+
+    def get_structure(self, repo_id: str, folder_path: str = "") -> dict:
+        """Получает структуру конкретной папки (файлы и подпапки) с полной рекурсией"""
+        extracted = Path(self.storage.get_repo_meta(repo_id)['extracted_path'])
+        root_folder = self._get_analysis_root(extracted)
+
+        if folder_path:
+            target_folder = root_folder / folder_path
+        else:
+            target_folder = root_folder
+
+        if not target_folder.exists() or not target_folder.is_dir():
+            raise InvalidQuestionError(f'Folder {folder_path} not found')
+
+        # Используем рекурсивный метод
+        return self._get_structure_recursive(target_folder, root_folder, folder_path or '.')
+
+    def _get_structure_recursive(self, target_folder: Path, root_folder: Path, folder_path: str) -> dict:
+        """Рекурсивно получает структуру папки (только текущий уровень + вложенные папки рекурсивно)"""
+        # Парсим файлы ТОЛЬКО в текущей папке (не рекурсивно)
+        py_files = sorted(target_folder.glob('*.py'))
+        file_structures = []
+        for py_file in py_files:
+            if py_file.is_file():
+                file_structures.append(self._parse_python_file(py_file, root_folder))
+
+        # Получаем вложенные папки рекурсивно
+        subfolders = []
+        for item in sorted(target_folder.iterdir()):
+            if item.is_dir() and item.name not in IGNORED_DIRS:
+                subfolder_path = str(item.relative_to(root_folder).as_posix())
+                subfolder_structure = self._get_structure_recursive(item, root_folder, subfolder_path)
+                subfolders.append(subfolder_structure)
+
+        # Генерируем summary для текущей папки
+        summary = self._generate_folder_summary(target_folder, file_structures, root_folder)
+
+        # Ищем README только в текущей папке
+        readme = self._find_readme_in_folder(target_folder)
+
+        return {
+            'path': folder_path,
+            'files': file_structures,
+            'subfolders': subfolders,
+            'summary': summary,
+            'readme': readme,
+        }
+
+    def _find_readme_in_folder(self, folder: Path) -> str | None:
+        """Ищет README только в текущей папке (не рекурсивно)"""
+        readme_candidates = ['README.md', 'README.rst', 'README.txt', 'readme.md', 'README', 'Readme.md']
+
+        for filename in readme_candidates:
+            readme_path = folder / filename
+            if readme_path.exists() and readme_path.is_file():
+                try:
+                    return readme_path.read_text(encoding='utf-8')
+                except (UnicodeDecodeError, IOError):
+                    continue
+
+        return None
+
+    def _read_readme(self, extracted: Path) -> str | None:
+        """Читает README из папки"""
         # Если в корне всего одна папка, используем её как корень (как в get_tree)
         try:
             children = list(extracted.iterdir())
