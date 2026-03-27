@@ -13,9 +13,17 @@ client = TestClient(app)
 def make_zip() -> bytes:
     buffer = BytesIO()
     with zipfile.ZipFile(buffer, 'w') as archive:
+        # Корневые файлы
         archive.writestr('app/main.py', 'print("hello")')
-        archive.writestr('app/service.py', 'def run():\n    return True')
-        archive.writestr('README.md', '# demo')
+        archive.writestr('app/service.py', 'def run():\n    return True\n\nclass Service:\n    def process(self):\n        pass')
+        archive.writestr('app/utils.py', 'def helper():\n    pass')
+        # Подпапка для Python-моделей
+        archive.writestr('app/models/user.py', 'class User:\n    def __init__(self, name):\n        self.name = name')
+        archive.writestr('app/models/product.py', 'class Product:\n    def __init__(self, title):\n        self.title = title')
+        # Папка без .py (только вспомогательные файлы)
+        archive.writestr('app/assets/config.txt', 'data=123')
+        archive.writestr('app/assets/README.md', 'Assets README')
+        archive.writestr('README.md', '# Demo Project\n\nThis is a demo project for testing.')
     buffer.seek(0)
     return buffer.read()
 
@@ -72,12 +80,31 @@ def test_repo_structure_parsing():
 
     structure_data = structure_response.json()
     assert structure_data['repo_id'] == repo_id
-    assert any(f['file_path'] == 'app/service.py' for f in structure_data['files'])
-    assert structure_data['readme'] is not None
+    assert 'structure' in structure_data
+    assert structure_data['structure']['path'] == '.'
+    assert 'files' in structure_data['structure']
+    assert 'subfolders' in structure_data['structure']
+    assert 'summary' in structure_data['structure']
 
+    # Корень может содержать только подпапку app и README
+    assert structure_data['structure']['files'] == []
+    assert any(sf['path'] == 'app' for sf in structure_data['structure']['subfolders'])
+    assert structure_data['structure']['readme'] is not None
 
-    service_file = next(f for f in structure_data['files'] if f['file_path'] == 'app/service.py')
+    # Проверяем app-папку
+    app_structure = client.get(f'/repo/{repo_id}/structure/app').json()
+    assert app_structure['structure']['path'] == 'app'
+    assert any(f['file_path'] == 'app/service.py' for f in app_structure['structure']['files'])
+
+    service_file = next(f for f in app_structure['structure']['files'] if f['file_path'] == 'app/service.py')
     assert any(func['name'] == 'run' for func in service_file['functions'])
+
+    # Проверяем, что в app/assets без .py есть README и корректный summary
+    assets_structure = client.get(f'/repo/{repo_id}/structure/app/assets').json()
+    assert assets_structure['structure']['path'] == 'app/assets'
+    assert assets_structure['structure']['files'] == []
+    assert assets_structure['structure']['readme'] == 'Assets README'
+    assert 'не содержит .py' in assets_structure['structure']['summary']
 
     summary_response = client.get(f'/repo/{repo_id}/summary')
     assert summary_response.status_code == 200
