@@ -146,6 +146,29 @@ class RepoService:
         structure = [self._parse_python_file(path, extracted) for path in py_files if path.is_file()]
         return structure
 
+    def _read_readme(self, repo_id: str) -> str | None:
+        extracted = Path(self.storage.get_repo_meta(repo_id)['extracted_path'])
+        
+        # Если в корне всего одна папка, используем её как корень (как в get_tree)
+        try:
+            children = list(extracted.iterdir())
+            if len(children) == 1 and children[0].is_dir():
+                extracted = children[0]
+        except (FileNotFoundError, PermissionError):
+            pass
+        
+        readme_candidates = ['README.md', 'README.rst', 'README.txt', 'readme.md', 'README', 'Readme.md']
+        
+        for filename in readme_candidates:
+            readme_path = extracted / filename
+            if readme_path.exists() and readme_path.is_file():
+                try:
+                    return readme_path.read_text(encoding='utf-8')
+                except (UnicodeDecodeError, IOError):
+                    continue
+        
+        return None
+
     def get_summary(self, repo_id: str) -> str:
         modules = self.get_modules(repo_id)
         names = ', '.join(module.name for module in modules[:5])

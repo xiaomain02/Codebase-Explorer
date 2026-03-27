@@ -23,3 +23,4 @@ class FileStructure(BaseModel):
 class RepoStructureResponse(BaseModel):
     repo_id: str
     files: list[FileStructure] = []
+    readme: str | None = None

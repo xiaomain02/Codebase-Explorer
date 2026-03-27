@@ -35,7 +35,9 @@ def get_summary(repo_id: str) -> RepoSummaryResponse:
 
 @router.get('/{repo_id}/structure', response_model=RepoStructureResponse)
 def get_structure(repo_id: str) -> RepoStructureResponse:
-    return RepoStructureResponse(repo_id=repo_id, files=service.get_structure(repo_id))
+    files = service.get_structure(repo_id)
+    readme = service._read_readme(repo_id)
+    return RepoStructureResponse(repo_id=repo_id, files=files, readme=readme)
 
 
 @router.post('/{repo_id}/ask', response_model=AskResponse)
