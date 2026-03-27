@@ -1,0 +1,35 @@
+version: '3.9'
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: codebase-explorer-backend:latest
+    volumes:
+      - .:/app:cached
+      - ./storage:/app/storage
+    ports:
+      - 8000:8000
+    environment:
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - llm
+
+  frontend:
+    image: nginx:stable-alpine
+    ports:
+      - 3000:80
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+    depends_on:
+      - backend
+
+  llm:
+    image: ghcr.io/huggingface/text-generation-inference:latest
+    # Пример: если используете иной LLM, замените на свою реализацию.
+    ports:
+      - 8080:8080
+    environment:
+      - MODEL_ID=tiiuae/falcon-7b-instruct
+      - MAX_NEW_TOKENS=128
+      - GPU_ACCELERATION=none
