@@ -1,0 +1,250 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  background: #f0f2f5;
+}
+
+/* Upload Page */
+.upload-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.upload-card {
+  background: white;
+  border-radius: 24px;
+  padding: 48px;
+  text-align: center;
+  max-width: 480px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+}
+
+.upload-card h1 {
+  font-size: 28px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.upload-card p {
+  color: #666;
+  margin-bottom: 32px;
+}
+
+.upload-button {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 12px 28px;
+  border-radius: 30px;
+  cursor: pointer;
+  display: inline-block;
+  font-weight: 500;
+  transition: opacity 0.2s;
+}
+
+.upload-button:hover {
+  opacity: 0.9;
+}
+
+.upload-hint {
+  font-size: 12px;
+  color: #999;
+  margin-top: 16px;
+}
+
+/* App Container */
+.app-container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #f0f2f5;
+}
+
+/* Header */
+.app-header {
+  background: white;
+  padding: 12px 24px;
+  border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.new-upload-btn {
+  background: #4a90e2;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.new-upload-btn:hover {
+  background: #357abd;
+}
+
+.app-title {
+  font-weight: 600;
+  color: #333;
+}
+
+.demo-badge {
+  font-size: 11px;
+  background: #e8e8e8;
+  padding: 4px 10px;
+  border-radius: 20px;
+  color: #666;
+}
+
+/* Main Layout */
+.main-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Graph Container */
+.graph-container {
+  flex: 1;
+  height: calc(100vh - 57px);
+  background: #fafafa;
+}
+
+.graph-info {
+  background: rgba(255, 255, 255, 0.9);
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #666;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.graph-info div {
+  margin: 4px 0;
+}
+
+/* Right Panel */
+.panel-right {
+  width: 320px;
+  background: white;
+  border-left: 1px solid #e0e0e0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.panel-header {
+  padding: 16px;
+  border-bottom: 1px solid #e0e0e0;
+  flex-shrink: 0;
+}
+
+.panel-header h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+}
+
+.details-content {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+}
+
+.details-placeholder {
+  text-align: center;
+  padding: 40px 20px;
+  color: #999;
+}
+
+.placeholder-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.placeholder-hint {
+  font-size: 12px;
+  margin-top: 8px;
+  color: #bbb;
+}
+
+.details-card {
+  background: #fafafa;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.details-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.details-icon {
+  font-size: 28px;
+}
+
+.details-header h4 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.details-section {
+  margin-top: 16px;
+}
+
+.details-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #888;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.details-type {
+  font-size: 13px;
+  color: #4a90e2;
+}
+
+.details-contents {
+  font-size: 13px;
+  color: #666;
+}
+
+.details-info {
+  font-size: 13px;
+  color: #666;
+  line-height: 1.5;
+}
+
+/* ReactFlow Node Custom Styles */
+.react-flow__node {
+  cursor: pointer;
+  font-weight: 500;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s;
+}
+
+.react-flow__node:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
