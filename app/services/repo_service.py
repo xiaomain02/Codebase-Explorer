@@ -14,7 +14,8 @@ from app.services.storage_service import StorageService
 
 
 class RepoService:
-    def __init__(self, storage: StorageService | None = None):
+    def __init__(self, storage: StorageService | None = None, llm_service=None):
+        self.llm = llm_service
         self.storage = storage or StorageService()
 
     async def upload_repo(self, file: UploadFile) -> str:
@@ -333,39 +334,111 @@ class RepoService:
             'Это базовый summary-заглушка для MVP backend и его можно заменить LLM-сервисом.'
         )
 
+    # def ask_about_repo(self, repo_id: str, question: str) -> dict:
+    #     cleaned = question.strip()
+    #     if not cleaned:
+    #         raise InvalidQuestionError('Question must not be empty')
+
+    #     extracted = Path(self.storage.get_repo_meta(repo_id)['extracted_path'])
+    #     matched_files: list[str] = []
+    #     keywords = [token.lower() for token in cleaned.replace('?', ' ').split() if len(token) > 2]
+    #     for path in extracted.rglob('*'):
+    #         if not path.is_file():
+    #             continue
+    #         rel = str(path.relative_to(extracted))
+    #         lower_rel = rel.lower()
+    #         if any(keyword in lower_rel for keyword in keywords):
+    #             matched_files.append(rel)
+    #         if len(matched_files) >= 3:
+    #             break
+
+    #     if matched_files:
+    #         answer = (
+    #             'Для ответа на вопрос backend нашёл несколько потенциально релевантных файлов. '
+    #             'Сейчас это простая эвристика по именам файлов; позже сюда можно подключить retrieval + LLM.'
+    #         )
+    #     else:
+    #         some_files = [str(path.relative_to(extracted)) for path in extracted.rglob('*') if path.is_file()][:3]
+    #         matched_files = some_files
+    #         answer = (
+    #             'Точного совпадения по именам файлов не найдено. '
+    #             'В MVP backend вернул несколько файлов проекта, которые можно использовать как стартовый контекст для LLM.'
+    #         )
+
+    #     return {
+    #         'question': cleaned,
+    #         'answer': answer,
+    #         'sources': matched_files,
+    #     }
+    
     def ask_about_repo(self, repo_id: str, question: str) -> dict:
-        cleaned = question.strip()
-        if not cleaned:
-            raise InvalidQuestionError('Question must not be empty')
-
-        extracted = Path(self.storage.get_repo_meta(repo_id)['extracted_path'])
-        matched_files: list[str] = []
-        keywords = [token.lower() for token in cleaned.replace('?', ' ').split() if len(token) > 2]
-        for path in extracted.rglob('*'):
-            if not path.is_file():
-                continue
-            rel = str(path.relative_to(extracted))
-            lower_rel = rel.lower()
-            if any(keyword in lower_rel for keyword in keywords):
-                matched_files.append(rel)
-            if len(matched_files) >= 3:
-                break
-
-        if matched_files:
-            answer = (
-                'Для ответа на вопрос backend нашёл несколько потенциально релевантных файлов. '
-                'Сейчас это простая эвристика по именам файлов; позже сюда можно подключить retrieval + LLM.'
-            )
-        else:
-            some_files = [str(path.relative_to(extracted)) for path in extracted.rglob('*') if path.is_file()][:3]
-            matched_files = some_files
-            answer = (
-                'Точного совпадения по именам файлов не найдено. '
-                'В MVP backend вернул несколько файлов проекта, которые можно использовать как стартовый контекст для LLM.'
-            )
-
+        if not self.llm:
+            raise RuntimeError("LLM service not initialized")
+            
+        # Собираем контекст: дерево + модули + README
+        tree = self.get_tree(repo_id)
+        modules = self.get_modules(repo_id)
+        readme = self.get_readme(repo_id) if hasattr(self, 'get_readme') else ""
+        
+        context_parts = [
+            f"📁 Project Structure:\n{tree}",
+            f"📦 Modules:\n{modules}",
+        ]
+        if readme:
+            context_parts.append(f"📖 README:\n{readme}")
+            
+        full_context = "\n\n---\n\n".join(context_parts)
+        safe_context = self.llm.safe_truncate(full_context)
+        
+        prompt = f"Контекст проекта:\n{safe_context}\n\nВопрос пользователя: {question}"
+        answer = self.llm.generate(prompt)
+        
         return {
-            'question': cleaned,
-            'answer': answer,
-            'sources': matched_files,
+            "question": question,
+            "answer": answer,
+            "sources": ["structure", "modules", "readme"] if readme else ["structure", "modules"]
+        }
+
+    def describe_file(self, repo_id: str, file_path: str) -> dict:
+        """
+        Читает файл из хранилища и возвращает его описание через LLM.
+        """
+        # 1. Проверка: есть ли LLM
+        if not self.llm:
+            return {
+                "summary": "⚠️ LLM сервис не инициализирован.",
+                "classes": [], 
+                "functions": [], 
+                "imports": []
+            }
+        
+        # 2. Получаем путь к файлу в хранилище
+        # (АДАПТИРУЙ: если у тебя метод называется иначе, поправь здесь)
+        repo_paths = self.storage.get_repo_paths(repo_id)
+        full_path = repo_paths['extracted_path'] / file_path
+        
+        if not full_path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+        
+        # 3. Определяем язык по расширению
+        ext = full_path.suffix.lower()
+        language_map = {
+            '.py': 'python', '.js': 'javascript', '.ts': 'typescript',
+            '.java': 'java', '.go': 'go', '.rs': 'rust'
+        }
+        language = language_map.get(ext, 'text')
+        
+        # 4. Читаем файл (с обработкой кодировки)
+        try:
+            content = full_path.read_text(encoding='utf-8')
+        except UnicodeDecodeError:
+            content = full_path.read_text(encoding='latin-1')  # Fallback
+        
+        # 5. Вызываем LLM для анализа
+        description = self.llm.describe_file(content, file_path, language)
+        
+        return {
+            "repo_id": repo_id,
+            "file_path": file_path,
+            **description
         }

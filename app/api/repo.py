@@ -2,7 +2,7 @@ from fastapi import APIRouter, File, UploadFile
 
 from app.schemas.modules import RepoModulesResponse
 from app.schemas.qa import AskRequest, AskResponse
-from app.schemas.repo import UploadRepoResponse
+from app.schemas.repo import UploadRepoResponse, FileDescriptionResponse 
 from app.schemas.structure import RepoStructureResponse, FolderStructure
 from app.schemas.summary import RepoSummaryResponse
 from app.schemas.tree import RepoTreeResponse
@@ -53,3 +53,13 @@ def get_structure_root(repo_id: str) -> RepoStructureResponse:
 def ask_about_repo(repo_id: str, payload: AskRequest) -> AskResponse:
     result = service.ask_about_repo(repo_id, payload.question)
     return AskResponse(repo_id=repo_id, **result)
+
+
+# 👇 2. Добавили новый эндпоинт в самый низ
+@router.get('/{repo_id}/file/{file_path:path}/describe', response_model=FileDescriptionResponse)
+def describe_file(repo_id: str, file_path: str) -> FileDescriptionResponse:
+    """
+    Возвращает описание конкретного файла: назначение, классы, функции.
+    """
+    result = service.describe_file(repo_id, file_path)
+    return FileDescriptionResponse(**result)
