@@ -69,18 +69,63 @@ class LLMService:
             return text[:max_chars] + "\n\n[... контекст обрезан из-за ограничений окна ...]"
         return text
     
-def describe_file(self, file_content: str, file_path: str, language: str = "python") -> dict:
-    safe_content = self.safe_truncate(file_content, reserve_tokens=1024)
-    prompt = f"""Ты — эксперт по анализу кода на {language}. Проанализируй файл `{file_path}` и верни СТРОГО валидный JSON.
-
-Формат:
-{{
-  "summary": "За что отвечает файл (1-2 предложения)",
-  "classes": [{{"name": "ClassName", "description": "Что делает"}}],
-  "functions": [{{"name": "func", "description": "Что делает"}}],
-  "imports": ["module1", "module2"]
-}}
-
-Содержимое:
-```{file_path}
-{safe_content}
+    def describe_file(self, file_content: str, file_path: str, language: str = "python") -> dict:
+        safe_content = self.safe_truncate(file_content, reserve_tokens=1024)
+        
+        prompt = (
+            f"Ты — эксперт по анализу кода на {language}. "
+            f"Проанализируй файл `{file_path}` и верни ТОЛЬКО валидный JSON.\n\n"
+            "Формат (строго):\n"
+            '{"summary": "текст", "classes": [{"name": "X", "description": "Y"}], "functions": [{"name": "F", "description": "Z"}], "imports": ["mod1"]}\n\n'
+            f"Код файла:\n{safe_content}\n\n"
+            "JSON-ответ:"
+        )
+        
+        try:
+            import json, re
+            
+            response = self.llm.create_chat_completion(
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=1024,
+                temperature=0.1,
+                top_p=0.9,
+                repeat_penalty=1.1,
+                stop=None
+            )
+            raw_answer = response["choices"][0]["message"]["content"].strip()
+            
+            cleaned = re.sub(r'^```(?:json)?\s*|\s*```$', '', raw_answer, flags=re.MULTILINE).strip()
+            
+            if not cleaned.startswith('{'):
+                match = re.search(r'\{.*\}', cleaned, re.DOTALL)
+                if match:
+                    cleaned = match.group(0)
+            
+            result = json.loads(cleaned)
+            
+        except Exception as e:
+            logger.error(f"LLM error: {e}")
+            result = {"summary": f"Ошибка: {str(e)}", "classes": [], "functions": [], "imports": []}
+        
+        def to_dict_list(items):
+            if not isinstance(items, list):
+                return []
+            out = []
+            for it in items:
+                if isinstance(it, dict):
+                    out.append({"name": str(it.get("name", "")), "description": str(it.get("description", ""))})
+                elif isinstance(it, str):
+                    out.append({"name": it, "description": ""})
+            return out
+        
+        def to_str_list(items):
+            if not isinstance(items, list):
+                return []
+            return [str(x) for x in items if isinstance(x, str)]
+        
+        return {
+            "summary": str(result.get("summary", "")),
+            "classes": to_dict_list(result.get("classes")),
+            "functions": to_dict_list(result.get("functions")),
+            "imports": to_str_list(result.get("imports"))
+        }

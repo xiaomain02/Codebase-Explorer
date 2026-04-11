@@ -400,45 +400,69 @@ class RepoService:
         }
 
     def describe_file(self, repo_id: str, file_path: str) -> dict:
-        """
-        Читает файл из хранилища и возвращает его описание через LLM.
-        """
-        # 1. Проверка: есть ли LLM
-        if not self.llm:
-            return {
-                "summary": "⚠️ LLM сервис не инициализирован.",
-                "classes": [], 
-                "functions": [], 
-                "imports": []
+            """
+            Читает файл из хранилища и возвращает его описание через LLM.
+            """
+            if not self.llm:
+                return {
+                    "repo_id": repo_id,
+                    "file_path": file_path,
+                    "summary": "⚠️ LLM сервис не инициализирован.",
+                    "classes": [], 
+                    "functions": [], 
+                    "imports": []
+                }
+            
+            try:
+                repo_paths = self.storage.get_repo_paths(repo_id)
+                full_path = repo_paths['extracted_path'] / file_path
+            except AttributeError:
+                from pathlib import Path
+                full_path = Path(f"./storage/repos/{repo_id}/extracted/{file_path}")
+            
+            if not full_path.exists():
+                return {
+                    "repo_id": repo_id,
+                    "file_path": file_path,
+                    "summary": f"⚠️ Файл не найден: {file_path}",
+                    "classes": [], 
+                    "functions": [], 
+                    "imports": []
+                }
+            
+            ext = full_path.suffix.lower()
+            language_map = {
+                '.py': 'python', '.js': 'javascript', '.ts': 'typescript',
+                '.java': 'java', '.go': 'go', '.rs': 'rust'
             }
-        
-        # 2. Получаем путь к файлу в хранилище
-        # (АДАПТИРУЙ: если у тебя метод называется иначе, поправь здесь)
-        repo_paths = self.storage.get_repo_paths(repo_id)
-        full_path = repo_paths['extracted_path'] / file_path
-        
-        if not full_path.exists():
-            raise FileNotFoundError(f"File not found: {file_path}")
-        
-        # 3. Определяем язык по расширению
-        ext = full_path.suffix.lower()
-        language_map = {
-            '.py': 'python', '.js': 'javascript', '.ts': 'typescript',
-            '.java': 'java', '.go': 'go', '.rs': 'rust'
-        }
-        language = language_map.get(ext, 'text')
-        
-        # 4. Читаем файл (с обработкой кодировки)
-        try:
-            content = full_path.read_text(encoding='utf-8')
-        except UnicodeDecodeError:
-            content = full_path.read_text(encoding='latin-1')  # Fallback
-        
-        # 5. Вызываем LLM для анализа
-        description = self.llm.describe_file(content, file_path, language)
-        
-        return {
-            "repo_id": repo_id,
-            "file_path": file_path,
-            **description
-        }
+            language = language_map.get(ext, 'text')
+            
+            try:
+                content = full_path.read_text(encoding='utf-8')
+            except UnicodeDecodeError:
+                content = full_path.read_text(encoding='latin-1')
+            except Exception as e:
+                return {
+                    "repo_id": repo_id,
+                    "file_path": file_path,
+                    "summary": f"⚠️ Ошибка чтения файла: {str(e)}",
+                    "classes": [], 
+                    "functions": [], 
+                    "imports": []
+                }
+            
+            try:
+                description = self.llm.describe_file(content, file_path, language)
+            except Exception as e:
+                description = {
+                    "summary": f"⚠️ Ошибка анализа: {str(e)}",
+                    "classes": [],
+                    "functions": [],
+                    "imports": []
+                }
+            
+            return {
+                "repo_id": repo_id,
+                "file_path": file_path,
+                **description
+            }
