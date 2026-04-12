@@ -39,7 +39,6 @@ def get_summary(repo_id: str) -> RepoSummaryResponse:
 @router.get('/{repo_id}/structure/{path:path}', response_model=RepoStructureResponse)
 def get_structure(repo_id: str, path: str = "") -> RepoStructureResponse:
     structure_data = service.get_structure(repo_id, path)
-    # README находится внутри структуры папки; для корня это readme корневой директории
     return RepoStructureResponse(
         repo_id=repo_id,
         structure=FolderStructure(**structure_data),
@@ -58,7 +57,6 @@ def ask_about_repo(repo_id: str, payload: AskRequest) -> AskResponse:
     return AskResponse(repo_id=repo_id, **result)
 
 
-# 👇 2. Добавили новый эндпоинт в самый низ
 @router.get('/{repo_id}/file/{file_path:path}/describe', response_model=FileDescriptionResponse)
 def describe_file(repo_id: str, file_path: str) -> FileDescriptionResponse:
     """

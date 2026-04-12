@@ -1,5 +1,7 @@
 import os
 import logging
+import json
+import re
 from pathlib import Path
 from typing import Optional, List
 from llama_cpp import Llama
@@ -73,17 +75,28 @@ class LLMService:
         safe_content = self.safe_truncate(file_content, reserve_tokens=1024)
         
         prompt = (
-            f"Ты — эксперт по анализу кода на {language}. "
-            f"Проанализируй файл `{file_path}` и верни ТОЛЬКО валидный JSON.\n\n"
-            "Формат (строго):\n"
-            '{"summary": "текст", "classes": [{"name": "X", "description": "Y"}], "functions": [{"name": "F", "description": "Z"}], "imports": ["mod1"]}\n\n'
-            f"Код файла:\n{safe_content}\n\n"
+            f"Ты — эксперт по анализу кода на языке {language}. "
+            f"Проанализируй файл `{file_path}` и верни ТОЛЬКО валидный JSON без лишнего текста.\n\n"
+            "Строго следуй этой схеме ответа:\n"
+            "{\n"
+            '  "summary": "Краткое описание назначения файла (1-2 предложения)",\n'
+            '  "classes": [\n'
+            '    {"name": "ClassName", "description": "Что делает этот класс"}\n'
+            "  ],\n"
+            '  "functions": [\n'
+            '    {"name": "function_name", "description": "Что делает эта функция"}\n'
+            "  ],\n"
+            '  "imports": ["module1", "module2.submodule"]\n'
+            "}\n\n"
+            "Правила:\n"
+            "- Если классов/функций нет — верни пустой массив [], а не строки.\n"
+            "- В поле imports указывай только имена модулей, без 'import' и 'from'.\n"
+            "- Не добавляй никаких пояснений, только JSON.\n\n"
+            f"Код файла:\n```{language}\n{safe_content}\n```\n\n"
             "JSON-ответ:"
         )
         
         try:
-            import json, re
-            
             response = self.llm.create_chat_completion(
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=1024,

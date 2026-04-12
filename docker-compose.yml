@@ -21,8 +21,7 @@ services:
       --reload-exclude dist
       --reload-exclude .git
       --reload-exclude frontend
-    # depends_on:
-    #   - llm
+      --reload-exclude storage
 
   frontend:
     image: nginx:stable-alpine
@@ -32,12 +31,3 @@ services:
       - ./frontend:/usr/share/nginx/html:ro
     depends_on:
       - backend
-
-  # llm:
-    # image: ghcr.io/huggingface/text-generation-inference:latest
-    # ports:
-    #   - 8080:8080
-    # environment:
-    #   - MODEL_ID=tiiuae/falcon-7b-instruct
-    #   - MAX_NEW_TOKENS=128
-    #   - GPU_ACCELERATION=none

@@ -52,18 +52,35 @@ class RepoService:
         children = list(extracted.iterdir())
         if len(children) == 1 and children[0].is_dir():
             extracted = children[0]
-        return self._build_tree(extracted)
+        tree, _ = self._build_tree(extracted)
+        return tree
 
-    def _build_tree(self, root: Path) -> TreeNode:
+    def _build_tree(self, root: Path, max_depth: int = 5, current_depth: int = 0, max_files: int = 500, files_scanned: int = 0) -> tuple[TreeNode, int]:
+        SKIP_DIRS = {'.git', 'node_modules', '__pycache__', '.venv', 'venv', 'dist', 'build', '.next', 'coverage'}
+        
+        if current_depth >= max_depth or files_scanned >= max_files:
+            return TreeNode(name=root.name, type='directory', children=[], truncated=True), files_scanned
+        
+        if root.name in IGNORED_FILES or root.name in IGNORED_DIRS or root.name in SKIP_DIRS:
+            return None, files_scanned
+        
         children: list[TreeNode] = []
         for item in sorted(root.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
-            if item.name in IGNORED_FILES or item.name in IGNORED_DIRS:
+            if files_scanned >= max_files:
+                break
+            if item.name in IGNORED_FILES or item.name in IGNORED_DIRS or item.name in SKIP_DIRS:
+                continue
+            if item.is_symlink():
                 continue
             if item.is_dir():
-                children.append(self._build_tree(item))
+                result, files_scanned = self._build_tree(item, max_depth, current_depth + 1, max_files, files_scanned)
+                if result:
+                    children.append(result)
             else:
+                files_scanned += 1
                 children.append(TreeNode(name=item.name, type='file'))
-        return TreeNode(name=root.name, type='directory', children=children)
+        
+        return TreeNode(name=root.name, type='directory', children=children), files_scanned
 
     def get_modules(self, repo_id: str) -> list[ModuleInfo]:
         extracted = Path(self.storage.get_repo_meta(repo_id)['extracted_path'])
