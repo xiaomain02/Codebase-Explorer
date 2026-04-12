@@ -25,3 +25,6 @@ var
 .vscode
 .pytest_cache
 storage
+node_modules/
+dist/
+*.log
