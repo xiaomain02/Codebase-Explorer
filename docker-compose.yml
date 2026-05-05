@@ -1,4 +1,3 @@
-version: '3.9'
 services:
   backend:
     build:
@@ -8,6 +7,7 @@ services:
     volumes:
       - .:/app:cached
       - ./storage:/app/storage
+      - ./models:/app/models:cached
     ports:
       - 8000:8000
     environment:
@@ -22,6 +22,7 @@ services:
       --reload-exclude .git
       --reload-exclude frontend
       --reload-exclude storage
+    restart: unless-stopped
 
   frontend:
     image: nginx:stable-alpine
@@ -31,3 +32,4 @@ services:
       - ./frontend:/usr/share/nginx/html:ro
     depends_on:
       - backend
+    restart: unless-stopped

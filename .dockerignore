@@ -28,3 +28,4 @@ storage
 node_modules/
 dist/
 *.log
+models/
