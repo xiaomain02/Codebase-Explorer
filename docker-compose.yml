@@ -1,34 +1,37 @@
-version: '3.9'
 services:
   backend:
     build:
       context: .
       dockerfile: Dockerfile
     image: codebase-explorer-backend:latest
+    container_name: backend
     volumes:
       - .:/app:cached
       - ./storage:/app/storage
+      - ./models:/app/models:cached
     ports:
       - 8000:8000
     environment:
       - PYTHONUNBUFFERED=1
-    # depends_on:
-    #   - llm
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+      --reload-exclude node_modules
+      --reload-exclude dist
+      --reload-exclude .git
+      --reload-exclude storage
+    restart: unless-stopped
 
   frontend:
-    image: nginx:stable-alpine
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    image: codebase-explorer-frontend:latest
+    container_name: frontend
     ports:
       - 3000:80
-    volumes:
-      - ./frontend:/usr/share/nginx/html:ro
     depends_on:
       - backend
-
-  # llm:
-    # image: ghcr.io/huggingface/text-generation-inference:latest
-    # ports:
-    #   - 8080:8080
-    # environment:
-    #   - MODEL_ID=tiiuae/falcon-7b-instruct
-    #   - MAX_NEW_TOKENS=128
-    #   - GPU_ACCELERATION=none
+    restart: unless-stopped

@@ -1,23 +1,65 @@
+# Node dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Python artifacts
 __pycache__/
 *.py[cod]
+*$py.class
+.Python
+.pytest_cache/
 *.pyo
 *.pyd
+
+# Virtual environments
+env/
+.venv/
 venv/
-.env/
+
+# Local environment files
+.env
 .env.*
+
+# Editor folders
 .vscode/
 .idea/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+lerna-debug.log*
+
+# Docker
+docker-compose.override.yml
+
+# Model and runtime data
+models/
+storage/
+
+# OS files
 .DS_Store
 Thumbs.db
-*.log
-.pytest_cache/
-.coverage
-htmlcov/
-dist/
-build/
-*.egg-info/
-storage/repos/*
-!storage/repos/.gitkeep
-storage/index.json
+
+# Binary files
+*.exe
+*.dll
+*.so
+*.dylib
+*.bin
+*.dat
+*.gguf
+*.pkl
+*.h5
+*.pb
+*.onnx
+*.cmd
+*.ps1
+
+# Temporary files
 *.tmp
 *.temp
+*.swp
+*.swo

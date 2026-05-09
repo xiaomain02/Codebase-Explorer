@@ -25,3 +25,9 @@ var
 .vscode
 .pytest_cache
 storage
+node_modules/
+dist/
+*.log
+models/
+.DS_Store
+.turbo
