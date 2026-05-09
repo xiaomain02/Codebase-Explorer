@@ -9,7 +9,7 @@ from app.schemas.tree import RepoTreeResponse
 from app.services.repo_service import RepoService
 from app.services.llm_service import LLMService
 
-router = APIRouter(prefix='/repo', tags=['repo'])
+router = APIRouter(prefix='/api/repos', tags=['repo'])
 service = RepoService()
 llm_service = LLMService()
 service = RepoService(llm_service=llm_service)

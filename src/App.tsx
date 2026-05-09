@@ -12,15 +12,30 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { reposApi } from './api/repos';
+import { useRepo } from './hooks/useRepo';
+import { StructureView } from './components/StructureView/StructureView';
+import { QAPanel } from './components/QAPanel/QAPanel';
 import './App.css';
 
 function App() {
+  const [repoId, setRepoId] = useState('');
   const [uploaded, setUploaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNode, setSelectedNode] = useState<any>(null);
   const reactFlowWrapper = useRef<any>(null);
+  const {
+    loading: repoLoading,
+    error,
+    structure,
+    summary,
+    modules,
+    answer,
+    askQuestion,
+    loadStructure,
+    setAnswer,
+  } = useRepo(repoId);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -29,6 +44,8 @@ function App() {
     setLoading(true);
     try {
       const result = await reposApi.upload(file);
+      setRepoId(result.repo_id);
+      setAnswer(null);
       const treeData = await reposApi.getTree(result.repo_id);
       
       // Строим граф из дерева
@@ -154,11 +171,12 @@ function App() {
           </ReactFlow>
         </div>
 
-        {/* Правая панель - детали */}
+        {/* Правая панель - детали и аналитика */}
         <div className="panel-right">
           <div className="panel-header">
-            <h3>Node Details</h3>
+            <h3>Workspace</h3>
           </div>
+
           <div className="details-content">
             {selectedNode ? (
               <div className="details-card">
@@ -194,6 +212,24 @@ function App() {
                 <p className="placeholder-hint">Select a folder or file to see details</p>
               </div>
             )}
+
+            <div className="api-cards">
+              <StructureView
+                structure={structure}
+                summary={summary}
+                modules={modules}
+                currentPath={structure?.structure?.path || ''}
+                onFolderClick={loadStructure}
+              />
+
+              <QAPanel onAsk={askQuestion} answer={answer} loading={repoLoading} />
+
+              {error && (
+                <div className="error-card">
+                  <strong>Error:</strong> {error}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

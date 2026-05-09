@@ -1,6 +1,7 @@
 import axios from 'axios';
 
+// Используем относительный путь - nginx проксирует /api/ к backend:8000
 export const api = axios.create({
-  baseURL: 'http://localhost:8000',
+  baseURL: '/',
   timeout: 60000,
 });
