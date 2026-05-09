@@ -29,3 +29,5 @@ node_modules/
 dist/
 *.log
 models/
+.DS_Store
+.turbo
