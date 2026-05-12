@@ -90,6 +90,44 @@ src/App.tsx(37,5): error TS6133: 'setAnswer' is declared but its value is never 
 - Использована переменная `setAnswer` в функции `handleFileUpload` для сброса предыдущего ответа
 - Добавлено `setAnswer(null)` после загрузки нового репозитория
 
+### 5. 504 Gateway Timeout при загрузке файлов
+**Проблема**: Nginx возвращал ошибку `504 Gateway Timeout` при POST запросе на `/api/repos/upload`:
+```
+upstream timed out (110: Operation timed out) while reading response header from upstream
+client request body is buffered to a temporary file /var/cache/nginx/client_temp/...
+```
+
+Причины:
+- Nginx по умолчанию имеет таймауты 60 секунд (слишком мало для больших файлов)
+- Флаг `--reload` в docker-compose.yml замораживал бэкенд при изменениях файлов во время upload
+- Отсутствовала оптимизация буферинга для больших файлов
+
+**Решение** (`nginx.conf`, `docker-compose.yml`, `Dockerfile`):
+
+1. **nginx.conf** - добавлены таймауты и оптимизация:
+   ```nginx
+   proxy_connect_timeout 300s;    # Таймаут подключения - 5 минут
+   proxy_send_timeout 300s;       # Таймаут отправки - 5 минут
+   proxy_read_timeout 300s;       # Таймаут чтения ответа - 5 минут
+   client_max_body_size 500M;     # Поддержка файлов до 500MB
+   proxy_buffering off;           # Отключен буферинг для больших файлов
+   proxy_request_buffering off;   # Отключен буферинг запросов
+   ```
+
+2. **docker-compose.yml** - удалены флаги `--reload` и связанные опции:
+   - Перезагрузка при изменениях файлов больше не будет прерывать upload
+   - Бэкенд работает стабильнее во время обработки больших файлов
+
+3. **Dockerfile** - удален флаг `--reload` из CMD:
+   - Приложение работает в production режиме
+   - Нет автоматических перезагрузок при изменениях файлов
+
+**Результат**: 
+- ✅ Upload больших файлов теперь работает без таймаутов
+- ✅ Максимальный размер файла: 500MB (как в config.py)
+- ✅ Бэкенд не замораживается во время обработки файлов
+- ✅ Nginx корректно обрабатывает длительные запросы
+
 ## Результат после исправлений
 
 ✅ **Фронтенд подключен к бэкенду** - все API запросы корректно обрабатываются  
