@@ -31,4 +31,4 @@ RUN mkdir -p /app/storage /app/models
 EXPOSE 8000
 
 # Запуск
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
