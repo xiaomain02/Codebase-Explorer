@@ -5,9 +5,7 @@ export const reposApi = {
   upload: async (file: File) => {
     const formData = new FormData();
     formData.append('file', file);
-    const response = await api.post('/api/repos/upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    const response = await api.post('/api/repos/upload', formData);
     return response.data;
   },
 
