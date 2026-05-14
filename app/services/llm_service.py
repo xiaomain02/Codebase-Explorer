@@ -11,12 +11,12 @@ from app.core.config import BASE_DIR
 
 logger = logging.getLogger(__name__)
 
-MODEL_REPO = "bartowski/Llama-3.2-3B-Instruct-GGUF"
-MODEL_FILE = "Llama-3.2-3B-Instruct-Q4_K_M.gguf"
+MODEL_REPO = "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF"
+MODEL_FILE = "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
 MODEL_DIR = BASE_DIR / "models"
 
 class LLMService:
-    def __init__(self, n_ctx: int = 4096, n_gpu_layers: int = 0):
+    def __init__(self, n_ctx: int = 2048, n_gpu_layers: int = 0):
         self.model_dir = MODEL_DIR
         self.model_dir.mkdir(parents=True, exist_ok=True)
         self.model_path = self.model_dir / MODEL_FILE
@@ -24,7 +24,7 @@ class LLMService:
         self.n_gpu_layers = n_gpu_layers
 
         if not self.model_path.exists():
-            logger.info(f"📥 Model not found. Downloading {MODEL_FILE} (~1.9 GB)...")
+            logger.info(f"📥 Model not found. Downloading {MODEL_FILE} (~1.05 GB)...")
             hf_hub_download(
                 repo_id=MODEL_REPO, 
                 filename=MODEL_FILE, 
@@ -33,12 +33,12 @@ class LLMService:
             )
             logger.info("✅ Model downloaded successfully.")
 
-        logger.info("🧠 Loading model into memory (CPU-optimized)...")
+        logger.info("🧠 Loading Qwen-Coder into memory...")
         self.llm = Llama(
             model_path=str(self.model_path),
             n_ctx=n_ctx,
             n_gpu_layers=n_gpu_layers,
-            chat_format="llama-3",
+            chat_format="chatml",
             verbose=False,
             offload_kqv=True,
             n_threads=max(1, os.cpu_count() - 1) if os.cpu_count() else 2
@@ -48,7 +48,7 @@ class LLMService:
     def generate(self, prompt: str, system_prompt: Optional[str] = None, max_tokens: int = 512) -> str:
         try:
             messages = [
-                {"role": "system", "content": system_prompt or "Ты — эксперт по анализу кода. Отвечай чётко, по делу и строго на основе предоставленного контекста."},
+                {"role": "system", "content": system_prompt or "Ты — эксперт по анализу кода. Отвечай ТОЛЬКО на русском языке, чётко, по делу и строго на основе предоставленного контекста."},
                 {"role": "user", "content": prompt}
             ]
             response = self.llm.create_chat_completion(
@@ -57,7 +57,7 @@ class LLMService:
                 temperature=0.2,
                 top_p=0.9,
                 repeat_penalty=1.1,
-                stop=["<|eot_id|>"]
+                stop=["<|im_end|>", "\n\nUser:", "\n\nВопрос:"]  # Стоп-токены для Qwen
             )
             return response["choices"][0]["message"]["content"].strip()
         except Exception as e:
@@ -72,26 +72,26 @@ class LLMService:
         return text
     
     def describe_file(self, file_content: str, file_path: str, language: str = "python") -> dict:
-        safe_content = self.safe_truncate(file_content, reserve_tokens=1024)
+        safe_content = self.safe_truncate(file_content, reserve_tokens=512)  # Уменьшено для экономии контекста
         
         prompt = (
-            f"Ты — эксперт по анализу кода на языке {language}. "
-            f"Проанализируй файл `{file_path}` и верни ТОЛЬКО валидный JSON без лишнего текста.\n\n"
-            "Строго следуй этой схеме ответа:\n"
+            f"Ты — эксперт по анализу кода на языке {language}. Проанализируй файл `{file_path}` и верни ТОЛЬКО валидный JSON на русском языке.\n\n"
+            "СТРОГО следуй этой схеме (без лишних слов, только JSON):\n"
             "{\n"
-            '  "summary": "Краткое описание назначения файла (1-2 предложения)",\n'
+            '  "summary": "Краткое описание назначения файла на русском (1-2 предложения)",\n'
             '  "classes": [\n'
-            '    {"name": "ClassName", "description": "Что делает этот класс"}\n'
+            '    {"name": "ИмяКласса", "description": "Что делает этот класс, на русском"}\n'
             "  ],\n"
             '  "functions": [\n'
-            '    {"name": "function_name", "description": "Что делает эта функция"}\n'
+            '    {"name": "имя_функции", "description": "Что делает эта функция, на русском"}\n'
             "  ],\n"
-            '  "imports": ["module1", "module2.submodule"]\n'
+            '  "imports": ["модуль1", "модуль2.подмодуль"]\n'
             "}\n\n"
-            "Правила:\n"
-            "- Если классов/функций нет — верни пустой массив [], а не строки.\n"
-            "- В поле imports указывай только имена модулей, без 'import' и 'from'.\n"
-            "- Не добавляй никаких пояснений, только JSON.\n\n"
+            "ПРАВИЛА:\n"
+            "- ВСЕ текстовые поля — ТОЛЬКО на русском языке.\n"
+            "- Если классов/функций нет — верни пустой массив [].\n"
+            "- В imports указывай только имена модулей, без 'import' и 'from'.\n"
+            "- Не добавляй никаких пояснений, маркдауна или текста вне JSON.\n\n"
             f"Код файла:\n```{language}\n{safe_content}\n```\n\n"
             "JSON-ответ:"
         )
@@ -99,11 +99,11 @@ class LLMService:
         try:
             response = self.llm.create_chat_completion(
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=1024,
+                max_tokens=800,
                 temperature=0.1,
                 top_p=0.9,
                 repeat_penalty=1.1,
-                stop=None
+                stop=["<|im_end|>"]
             )
             raw_answer = response["choices"][0]["message"]["content"].strip()
             
@@ -126,18 +126,21 @@ class LLMService:
             out = []
             for it in items:
                 if isinstance(it, dict):
-                    out.append({"name": str(it.get("name", "")), "description": str(it.get("description", ""))})
-                elif isinstance(it, str):
-                    out.append({"name": it, "description": ""})
+                    out.append({
+                        "name": str(it.get("name", "")).strip(),
+                        "description": str(it.get("description", "")).strip()
+                    })
+                elif isinstance(it, str) and it.strip():
+                    out.append({"name": it.strip(), "description": ""})
             return out
         
         def to_str_list(items):
             if not isinstance(items, list):
                 return []
-            return [str(x) for x in items if isinstance(x, str)]
+            return [str(x).strip() for x in items if isinstance(x, str) and x.strip()]
         
         return {
-            "summary": str(result.get("summary", "")),
+            "summary": str(result.get("summary", "")).strip(),
             "classes": to_dict_list(result.get("classes")),
             "functions": to_dict_list(result.get("functions")),
             "imports": to_str_list(result.get("imports"))

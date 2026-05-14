@@ -27,9 +27,6 @@ export const QAPanel: React.FC<QAPanelProps> = ({ onAsk, answer, loading }) => {
 
   return (
     <div className="qa-section">
-      <div className="qa-mvp-note">
-        ⚠ <span><strong>MVP mode</strong> — answers use filename heuristics. Full LLM integration coming soon.</span>
-      </div>
 
       <form onSubmit={handleSubmit} className="qa-input-row">
         <input
