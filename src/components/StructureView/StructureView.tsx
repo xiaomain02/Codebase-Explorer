@@ -28,22 +28,18 @@ export const StructureView: React.FC<StructureViewProps> = ({
 
   return (
     <div className="info-section">
-      {/* Summary */}
+      {/* AI Summary */}
       {summary && (
         <div className="info-card">
           <div className="info-card-header">
             <div className="info-card-title">
-              <span>⬡</span> Project Summary
+              <span></span> Project Summary
             </div>
-            <span className="info-card-badge">MVP</span>
           </div>
           <div className="info-card-body">
-            <div className="summary-text">{summary.summary}</div>
-            {currentPath && (
-              <div style={{ marginTop: 10, fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: 'var(--muted)' }}>
-                Current folder: <span style={{ color: 'var(--accent)' }}>{currentPath || '.'}</span>
-              </div>
-            )}
+            <div className="summary-text" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+              {summary.summary}
+            </div>
           </div>
         </div>
       )}

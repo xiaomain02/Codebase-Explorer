@@ -322,7 +322,6 @@ class RepoService:
 
     def _read_readme(self, extracted: Path) -> str | None:
         """Читает README из папки"""
-        # Если в корне всего одна папка, используем её как корень (как в get_tree)
         try:
             children = list(extracted.iterdir())
             if len(children) == 1 and children[0].is_dir():
@@ -343,13 +342,54 @@ class RepoService:
         return None
 
     def get_summary(self, repo_id: str) -> str:
-        modules = self.get_modules(repo_id)
-        names = ', '.join(module.name for module in modules[:5])
-        return (
-            f'Репозиторий содержит {len(modules)} ключевых модулей. '
-            f'Основные части проекта: {names}. '
-            'Это базовый summary-заглушка для MVP backend и его можно заменить LLM-сервисом.'
-        )
+        try:
+            if not self.llm:
+                modules = self.get_modules(repo_id)
+                names = ', '.join(module.name for module in modules[:5])
+                return f'Репозиторий содержит {len(modules)} модулей: {names}.'
+            
+            modules = self.get_modules(repo_id)
+            readme = self._read_readme_from_repo_id(repo_id) or ''
+            tree = self.get_tree(repo_id)
+
+            try:
+                if hasattr(tree, 'model_dump_json'):
+                    tree_str = tree.model_dump_json(indent=2)
+                elif hasattr(tree, 'json'):
+                    tree_str = tree.json()
+                else:
+                    tree_str = str(tree)
+            except Exception:
+                tree_str = str(tree)
+
+            module_list = '\n'.join(f"- {m.name}: {m.description}" for m in modules[:5])
+            
+            prompt = (
+                f"Проанализируй репозиторий и дай краткое описание на русском (2-3 предложения).\n"
+                f"Модули: {module_list}\n"
+                f"README: {readme[:300]}\n"
+                f"Описание:"
+            )
+            
+            summary = self.llm.generate(
+                prompt,
+                system_prompt="Отвечай кратко, по делу, только на русском.",
+                max_tokens=200
+            )
+            return summary.strip()
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"get_summary error: {type(e).__name__}: {e}")
+            
+            readme = self._read_readme_from_repo_id(repo_id)
+            if readme:
+                return readme[:400] + ('...' if len(readme) > 400 else '')
+            
+            modules = self.get_modules(repo_id)
+            names = ', '.join(module.name for module in modules[:5])
+            return f'Репозиторий содержит {len(modules)} модулей: {names}.'
 
     # def ask_about_repo(self, repo_id: str, question: str) -> dict:
     #     cleaned = question.strip()
