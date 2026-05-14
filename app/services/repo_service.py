@@ -352,45 +352,55 @@ class RepoService:
             readme = self._read_readme_from_repo_id(repo_id) or ''
             tree = self.get_tree(repo_id)
 
-            try:
-                if hasattr(tree, 'model_dump_json'):
-                    tree_str = tree.model_dump_json(indent=2)
-                elif hasattr(tree, 'json'):
-                    tree_str = tree.json()
-                else:
-                    tree_str = str(tree)
-            except Exception:
-                tree_str = str(tree)
-
-            module_list = '\n'.join(f"- {m.name}: {m.description}" for m in modules[:5])
+            module_names = ', '.join(m.name for m in modules[:5])
+            readme_short = readme[:200].replace('\n', ' ').strip()
+            tree_short = str(tree)[:150] if tree else ''
             
             prompt = (
-                f"Проанализируй репозиторий и дай краткое описание на русском (2-3 предложения).\n"
-                f"Модули: {module_list}\n"
-                f"README: {readme[:300]}\n"
-                f"Описание:"
+                "Твоя задача: написать краткое описание проекта на русском языке.\n"
+                "Пиши ЕДИНЫМ связным текстом, а не списком.\n"
+                "Используй правильные падежи и склонения.\n"
+                "НЕ повторяй структуру этого промпта. НЕ пиши '1.', '2.', 'Модули:', 'README:'.\n"
+                "НЕ начинай с 'Проанализировал...', 'На основе...', 'Дано...'.\n"
+                "Просто начни с описания проекта.\n\n"
+                "Пример хорошего ответа:\n"
+                '"Это веб-приложение для управления учебным процессом. Бэкенд написан на FastAPI с использованием SQLAlchemy для работы с базой данных SQLite. Фронтенд реализован на React с библиотекой компонентов Ant Design. Проект поддерживает регистрацию пользователей, создание курсов и отслеживание посещаемости."\n\n'
+                f"Данные о проекте:\n"
+                f"• Модули: {module_names}\n"
+                f"• README: {readme_short}\n"
+                f"• Структура: {tree_short}\n\n"
+                "Ответ (единым текстом, на русском, с правильными склонениями):"
             )
-            
+
             summary = self.llm.generate(
                 prompt,
-                system_prompt="Отвечай кратко, по делу, только на русском.",
-                max_tokens=200
-            )
-            return summary.strip()
+                system_prompt="Ты — технический писатель. Отвечай только на русском языке, грамотно, с правильными падежами и склонениями. Пиши связным текстом, без списков и маркеров.",
+                max_tokens=150,
+            ).strip()
+
+            if not summary or summary.startswith(("⚠️", "Ошибка", "Error", "LLM error")):
+                return "⚠️ LLM не смогла сгенерировать описание. Попробуйте обновить страницу."
+
+            summary = summary.replace("```", "").replace("**", "").strip()
+            
+            for marker in ["Данные о проекте:", "• Модули:", "• README:", "• Структура:", "Контекст:", "Ответ:"]:
+                if marker in summary:
+                    summary = summary.split(marker)[0].strip()
+            summary = summary.split('\n\n')[0].split('\n')[0].strip()
+            if summary and not summary.endswith('.'):
+                summary = summary.rstrip(',') + '.'
+            
+            if not summary or len(summary) < 20:
+                return "⚠️ LLM вернула невалидный ответ."
+            
+            return summary
             
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
             logger.error(f"get_summary error: {type(e).__name__}: {e}")
-            
-            readme = self._read_readme_from_repo_id(repo_id)
-            if readme:
-                return readme[:400] + ('...' if len(readme) > 400 else '')
-            
-            modules = self.get_modules(repo_id)
-            names = ', '.join(module.name for module in modules[:5])
-            return f'Репозиторий содержит {len(modules)} модулей: {names}.'
-
+            return f"⚠️ Ошибка генерации summary: {type(e).__name__}. Проверь логи бэкенда."
+        
     # def ask_about_repo(self, repo_id: str, question: str) -> dict:
     #     cleaned = question.strip()
     #     if not cleaned:
