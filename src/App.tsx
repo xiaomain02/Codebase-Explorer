@@ -15,7 +15,7 @@ import 'reactflow/dist/style.css';
 import { reposApi } from './api/repos';
 import { useRepo } from './hooks/useRepo';
 import { StructureView } from './components/StructureView/StructureView';
-import { QAPanel } from './components/QAPanel/QAPanel';
+import { QAPanel, QAItem } from './components/QAPanel/QAPanel';
 import { NodeAiDescription } from './components/NodeAiDescription/NodeAiDescription.tsx';
 import './App.css';
 
@@ -23,17 +23,29 @@ type TabId = 'node' | 'info' | 'ask';
 
 const X_GAP = 240;
 const Y_GAP = 46;
+const LS_KEY = 'cbe-state-v1';
+
+function loadState() {
+  try { const r = localStorage.getItem(LS_KEY); return r ? JSON.parse(r) : null; }
+  catch { return null; }
+}
+function saveState(data: object) {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(data)); } catch {}
+}
 
 function App() {
-  const [repoId, setRepoId] = useState('');
-  const [uploaded, setUploaded] = useState(false);
+  const saved = loadState();
+
+  const [repoId, setRepoId] = useState<string>(saved?.repoId || '');
+  const [uploaded, setUploaded] = useState<boolean>(saved?.uploaded || false);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabId>('node');
+  const [activeTab, setActiveTab] = useState<TabId>(saved?.uploaded ? 'info' : 'node');
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNode, setSelectedNode] = useState<any>(null);
-  const [rawTree, setRawTree] = useState<any>(null);
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [rawTree, setRawTree] = useState<any>(saved?.rawTree || null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set(saved?.expandedIds || []));
+  const [qaHistory, setQaHistory] = useState<QAItem[]>(saved?.qaHistory || []);
   const reactFlowWrapper = useRef<any>(null);
 
   const {
@@ -42,11 +54,25 @@ function App() {
     structure,
     summary,
     modules,
-    answer,
     askQuestion,
     loadStructure,
     setAnswer,
   } = useRepo(repoId);
+
+  // ── Persist to localStorage ───────────────────
+  useEffect(() => {
+    if (!repoId) return;
+    saveState({ repoId, uploaded, rawTree, expandedIds: [...expandedIds], qaHistory });
+  }, [repoId, uploaded, rawTree, expandedIds, qaHistory]);
+
+  // Reset if repoId is stale (backend restarted)
+  useEffect(() => {
+    if (error && uploaded && repoId) {
+      localStorage.removeItem(LS_KEY);
+      setUploaded(false); setRepoId(''); setRawTree(null);
+      setSelectedNode(null); setQaHistory([]); setExpandedIds(new Set());
+    }
+  }, [error]);
 
   const nodeStyle = (isDir: boolean, isExpandable: boolean) => ({
     background: isDir ? '#21262d' : '#161b22',
@@ -142,10 +168,10 @@ function App() {
       const result = await reposApi.upload(file);
       setRepoId(result.repo_id);
       setAnswer(null);
+      setQaHistory([]);
       const treeResp = await reposApi.getTree(result.repo_id);
       const tree = treeResp.tree;
       setRawTree(tree);
-      // Раскрываем только корень — все папки свёрнуты
       setExpandedIds(new Set<string>([tree.name]));
       setUploaded(true);
       setActiveTab('info');
@@ -169,7 +195,6 @@ function App() {
       setExpandedIds(prev => {
         const next = new Set(prev);
         if (next.has(node.id)) {
-          // Сворачиваем эту папку и всех потомков
           const collapse = (n: any, path: string) => {
             next.delete(path);
             n.children?.forEach((c: any) => collapse(c, `${path}/${c.name}`));
@@ -183,11 +208,36 @@ function App() {
     }
   }, []);
 
+  // ── QA с историей ────────────────────────────
+  const handleAsk = useCallback(async (question: string) => {
+    const result = await askQuestion(question);
+    setQaHistory(prev => [
+      { question, answer: result?.answer || '', sources: result?.sources || [], collapsed: false },
+      ...prev,
+    ]);
+    return result;
+  }, [askQuestion]);
+
+  const toggleQaItem = useCallback((idx: number) => {
+    setQaHistory(prev => prev.map((item, i) =>
+      i === idx ? { ...item, collapsed: !item.collapsed } : item
+    ));
+  }, []);
+
+  const clearHistory = useCallback(() => setQaHistory([]), []);
+
+  // ── Reset ─────────────────────────────────────
+  const handleReset = () => {
+    localStorage.removeItem(LS_KEY);
+    setUploaded(false); setRepoId(''); setRawTree(null);
+    setSelectedNode(null); setQaHistory([]); setExpandedIds(new Set()); setAnswer(null);
+  };
+
   if (!uploaded) {
     return (
       <div className="upload-page">
         <div className="upload-card">
-          <div className="upload-card-eyebrow">v1.0 — MVP</div>
+          <div className="upload-card-eyebrow">v1.0</div>
           <h1>Codebase<span> Explorer</span></h1>
           <p>Upload a ZIP archive and interactively explore its file structure, modules, and contents.</p>
           <div className={`upload-drop-zone${loading ? ' loading' : ''}`}>
@@ -214,10 +264,7 @@ function App() {
   return (
     <div className="app-container">
       <header className="app-header">
-        <button
-          className="new-upload-btn"
-          onClick={() => { setUploaded(false); setSelectedNode(null); setRawTree(null); }}
-        >
+        <button className="new-upload-btn" onClick={handleReset}>
           ↑ New Upload
         </button>
         <div className="app-title">Codebase Explorer</div>
@@ -257,7 +304,7 @@ function App() {
               Overview
             </button>
             <button className={`panel-tab${activeTab === 'ask' ? ' active' : ''}`} onClick={() => setActiveTab('ask')}>
-              Ask
+              Ask{qaHistory.length > 0 && <span className="tab-count">{qaHistory.length}</span>}
             </button>
           </div>
 
@@ -292,7 +339,6 @@ function App() {
                       </div>
                     </div>
 
-                    {/* 🔹 Кнопка + описание от LLM для выбранного узла */}
                     <NodeAiDescription
                       repoId={repoId}
                       nodePath={selectedNode.fullPath || selectedNode.name}
@@ -321,7 +367,13 @@ function App() {
 
             {activeTab === 'ask' && (
               <>
-                <QAPanel onAsk={askQuestion} answer={answer} loading={repoLoading} />
+                <QAPanel
+                  onAsk={handleAsk}
+                  history={qaHistory}
+                  onToggle={toggleQaItem}
+                  onClear={clearHistory}
+                  loading={repoLoading}
+                />
                 {error && <div className="error-card" style={{ marginTop: 12 }}>⚠ {error}</div>}
               </>
             )}
