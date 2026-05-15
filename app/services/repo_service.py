@@ -175,33 +175,29 @@ class RepoService:
             'path': str(folder.relative_to(repo_root).as_posix()),
             'file_count': len([f for f in py_files if f.is_file()]),
             'subfolder_count': len(subfolders),
-            'summary': None,  # Пока без summary для subfolders в списке
+            'summary': None,
         }
 
     def _generate_folder_summary(self, folder: Path, file_structures: list[dict], repo_root: Path) -> str:
-        """Генерирует summary для конкретной папки"""
-        folder_name = folder.name
-        if str(folder.relative_to(repo_root).as_posix()) == '.':
-            folder_name = 'корневая папка'
+            folder_name = folder.name if str(folder.relative_to(repo_root).as_posix()) != '.' else 'корневая папка'
+            all_functions = []
+            all_classes = []
+            for file_info in file_structures:
+                all_functions.extend([f['name'] for f in file_info['functions']])
+                all_classes.extend([c['name'] for c in file_info['classes']])
 
-        # Собираем статистику
-        all_functions = []
-        all_classes = []
-        for file_info in file_structures:
-            all_functions.extend([f['name'] for f in file_info['functions']])
-            all_classes.extend([c['name'] for c in file_info['classes']])
+            if not file_structures:
+                non_py_files = [f.name for f in folder.iterdir() if f.is_file() and f.suffix.lower() != '.py']
+                if non_py_files:
+                    names = ', '.join(non_py_files[:10])
+                    more = f', и ещё {len(non_py_files)-10} файл(ов)' if len(non_py_files) > 10 else ''
+                    return f"Папка {folder_name} не содержит .py файлов; есть другие файлы: {names}{more}."
+                return f"Папка {folder_name} не содержит исходного кода."
 
-        if not file_structures:
-            # Если нет Python-файлов, но есть другие файлы — показываем их названия
-            non_py_files = [f.name for f in folder.iterdir() if f.is_file() and f.suffix.lower() != '.py']
-            if non_py_files:
-                names = ', '.join(non_py_files[:10])
-                more = f', и еще {len(non_py_files)-10} файл(ов)' if len(non_py_files) > 10 else ''
-                return f"Папка {folder_name} не содержит .py файлов; есть другие файлы: {names}{more}."
-            return f"Папка {folder_name} не содержит Python файлов."
-
-        # Пока заглушка - потом заменить на LLM
-        return self._generate_folder_summary_stub(folder_name, file_structures, all_functions, all_classes)
+            func_count = len(all_functions)
+            class_count = len(all_classes)
+            file_count = len(file_structures)
+            return f"Папка {folder_name} содержит {file_count} Python файлов с {class_count} классами и {func_count} функциями."
 
     def _generate_folder_summaries(self, repo_root: Path, file_structures: list[dict]) -> list[dict]:
         """Генерирует summaries для папок на основе структуры файлов"""
@@ -235,25 +231,6 @@ class RepoService:
 
         return summaries
 
-    def _generate_folder_summary_stub(self, folder_path: str, files: list[dict], functions: list[str], classes: list[str]) -> str:
-        """Заглушка для генерации summary папки - потом заменить на LLM"""
-        folder_name = folder_path.split('/')[-1] if folder_path else 'корневая папка'
-
-        if folder_name in ['api', 'routes', 'endpoints']:
-            return f"Папка {folder_name} содержит API эндпоинты и обработчики запросов."
-        elif folder_name in ['services', 'logic', 'business']:
-            return f"Папка {folder_name} реализует бизнес-логику приложения."
-        elif folder_name in ['models', 'schemas', 'types']:
-            return f"Папка {folder_name} содержит модели данных и схемы валидации."
-        elif folder_name in ['utils', 'helpers', 'common']:
-            return f"Папка {folder_name} содержит вспомогательные функции и утилиты."
-        elif folder_name in ['tests', 'test']:
-            return f"Папка {folder_name} содержит тесты для проверки функциональности."
-        else:
-            func_count = len(functions)
-            class_count = len(classes)
-            file_count = len(files)
-            return f"Папка {folder_name} содержит {file_count} Python файлов с {class_count} классами и {func_count} функциями."
     def _read_readme_from_repo_id(self, repo_id: str) -> str | None:
         """Читает README для репозитория по repo_id"""
         extracted = Path(self.storage.get_repo_meta(repo_id)['extracted_path'])
@@ -341,6 +318,63 @@ class RepoService:
         
         return None
 
+    def describe_node(self, repo_id: str, node_path: str, node_type: str) -> dict:
+        """Генерирует AI-описание конкретного файла или папки для Node Details"""
+        try:
+            if not self.llm:
+                return {"node_path": node_path, "description": "⚠️ LLM сервис не инициализирован."}
+
+            repo_root = Path(self.storage.get_repo_meta(repo_id)['extracted_path'])
+            
+            children = list(repo_root.iterdir())
+            if len(children) == 1 and children[0].is_dir():
+                repo_root = children[0]
+
+            clean_path = node_path.replace('\\', '/')
+            root_name = repo_root.name
+            if clean_path.startswith(f"{root_name}/"):
+                clean_path = clean_path[len(root_name) + 1:]
+            elif clean_path == root_name:
+                clean_path = "."
+
+            full_path = (repo_root / clean_path).resolve()
+            if not full_path.exists():
+                return {"node_path": node_path, "description": "⚠️ Узел не найден. Проверьте путь или архив."}
+
+            if node_type == "file":
+                try:
+                    content = full_path.read_text(encoding='utf-8', errors='ignore')[:1500]
+                except Exception:
+                    content = full_path.read_text(encoding='latin-1', errors='ignore')[:1500]
+                
+                ext = full_path.suffix.lower()
+                lang = {'.py': 'Python', '.ts': 'TypeScript', '.js': 'JavaScript', '.md': 'Markdown', '.html': 'HTML', '.css': 'CSS', '.json': 'JSON'}.get(ext, 'текст')
+                prompt = (
+                    f"Ты — старший разработчик. Объясни на русском, за что отвечает файл `{full_path.name}`.\n"
+                    "ПРАВИЛА: 1. ТОЛЬКО русский. 2. 2-3 предложения. 3. Начни сразу с сути.\n\n"
+                    f"Язык: {lang}\nКод (фрагмент):\n{content}\n\nОтвет:"
+                )
+            else:  # directory
+                try:
+                    contents = [f.name for f in sorted(full_path.iterdir()) if not f.name.startswith('.')][:12]
+                except Exception:
+                    contents = []
+                contents_str = ", ".join(contents) + (" и др." if len(contents) == 12 else "")
+                prompt = (
+                    f"Ты — старший разработчик. Объясни на русском, за что отвечает папка `{full_path.name}`.\n"
+                    "ПРАВИЛА: 1. ТОЛЬКО русский. 2. 2-3 предложения. 3. Начни сразу с сути.\n\n"
+                    f"Содержимое: {contents_str}\n\nОтвет:"
+                )
+
+            answer = self.llm.generate(prompt, system_prompt="Кратко, технически грамотно, только на русском.", max_tokens=200).strip()
+            return {"node_path": node_path, "description": answer.replace("```", "")}
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"describe_node error: {e}")
+            return {"node_path": node_path, "description": f"⚠️ Ошибка генерации: {type(e).__name__}"}
+        
     def get_summary(self, repo_id: str) -> str:
         try:
             if not self.llm:
@@ -451,69 +485,38 @@ class RepoService:
                 }
 
     def describe_file(self, repo_id: str, file_path: str) -> dict:
-            """
-            Читает файл из хранилища и возвращает его описание через LLM.
-            """
-            if not self.llm:
-                return {
-                    "repo_id": repo_id,
-                    "file_path": file_path,
-                    "summary": "⚠️ LLM сервис не инициализирован.",
-                    "classes": [], 
-                    "functions": [], 
-                    "imports": []
-                }
-            
-            try:
-                repo_paths = self.storage.get_repo_paths(repo_id)
-                full_path = repo_paths['extracted_path'] / file_path
-            except AttributeError:
-                from pathlib import Path
-                full_path = Path(f"./storage/repos/{repo_id}/extracted/{file_path}")
-            
-            if not full_path.exists():
-                return {
-                    "repo_id": repo_id,
-                    "file_path": file_path,
-                    "summary": f"⚠️ Файл не найден: {file_path}",
-                    "classes": [], 
-                    "functions": [], 
-                    "imports": []
-                }
-            
-            ext = full_path.suffix.lower()
-            language_map = {
-                '.py': 'python', '.js': 'javascript', '.ts': 'typescript',
-                '.java': 'java', '.go': 'go', '.rs': 'rust'
-            }
-            language = language_map.get(ext, 'text')
-            
-            try:
-                content = full_path.read_text(encoding='utf-8')
-            except UnicodeDecodeError:
-                content = full_path.read_text(encoding='latin-1')
-            except Exception as e:
-                return {
-                    "repo_id": repo_id,
-                    "file_path": file_path,
-                    "summary": f"⚠️ Ошибка чтения файла: {str(e)}",
-                    "classes": [], 
-                    "functions": [], 
-                    "imports": []
-                }
-            
-            try:
-                description = self.llm.describe_file(content, file_path, language)
-            except Exception as e:
-                description = {
-                    "summary": f"⚠️ Ошибка анализа: {str(e)}",
-                    "classes": [],
-                    "functions": [],
-                    "imports": []
-                }
-            
-            return {
-                "repo_id": repo_id,
-                "file_path": file_path,
-                **description
-            }
+                if not self.llm:
+                    return {
+                        "repo_id": repo_id, "file_path": file_path, "summary": "⚠️ LLM сервис не инициализирован.",
+                        "classes": [], "functions": [], "imports": []
+                    }
+                
+                try:
+                    repo_paths = self.storage.get_repo_paths(repo_id)
+                    full_path = repo_paths['extracted_path'] / file_path
+                except AttributeError:
+                    full_path = Path(f"./storage/repos/{repo_id}/extracted/{file_path}")
+                
+                if not full_path.exists():
+                    return {
+                        "repo_id": repo_id, "file_path": file_path, "summary": f"⚠️ Файл не найден: {file_path}",
+                        "classes": [], "functions": [], "imports": []
+                    }
+                
+                ext = full_path.suffix.lower()
+                language_map = {'.py': 'python', '.js': 'javascript', '.ts': 'typescript', '.java': 'java', '.go': 'go', '.rs': 'rust'}
+                language = language_map.get(ext, 'text')
+                
+                try:
+                    content = full_path.read_text(encoding='utf-8')
+                except UnicodeDecodeError:
+                    content = full_path.read_text(encoding='latin-1')
+                except Exception as e:
+                    return {"repo_id": repo_id, "file_path": file_path, "summary": f"⚠️ Ошибка чтения: {e}", "classes": [], "functions": [], "imports": []}
+                
+                try:
+                    description = self.llm.describe_file(content, file_path, language)
+                except Exception as e:
+                    description = {"summary": f"⚠️ Ошибка анализа: {e}", "classes": [], "functions": [], "imports": []}
+                
+                return {"repo_id": repo_id, "file_path": file_path, **description}

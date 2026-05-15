@@ -1,4 +1,5 @@
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, File, UploadFile, HTTPException
+from pydantic import BaseModel
 
 from app.schemas.modules import RepoModulesResponse
 from app.schemas.qa import AskRequest, AskResponse
@@ -10,9 +11,14 @@ from app.services.repo_service import RepoService
 from app.services.llm_service import LLMService
 
 router = APIRouter(prefix='/api/repos', tags=['repo'])
-service = RepoService()
+
 llm_service = LLMService()
 service = RepoService(llm_service=llm_service)
+
+
+class NodeDescribeRequest(BaseModel):
+    node_path: str
+    node_type: str  # "file" или "directory"
 
 
 @router.post('/upload', response_model=UploadRepoResponse)
@@ -64,3 +70,12 @@ def describe_file(repo_id: str, file_path: str) -> FileDescriptionResponse:
     """
     result = service.describe_file(repo_id, file_path)
     return FileDescriptionResponse(**result)
+
+
+@router.post('/{repo_id}/describe-node')
+def describe_node(repo_id: str, request: NodeDescribeRequest):
+    """Генерирует AI-описание файла или папки для Node Details"""
+    try:
+        return service.describe_node(repo_id, request.node_path, request.node_type)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

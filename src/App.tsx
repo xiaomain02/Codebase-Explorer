@@ -16,6 +16,7 @@ import { reposApi } from './api/repos';
 import { useRepo } from './hooks/useRepo';
 import { StructureView } from './components/StructureView/StructureView';
 import { QAPanel } from './components/QAPanel/QAPanel';
+import { NodeAiDescription } from './components/NodeAiDescription/NodeAiDescription.tsx';
 import './App.css';
 
 type TabId = 'node' | 'info' | 'ask';
@@ -161,7 +162,7 @@ function App() {
 
   const onNodeClick = useCallback((_event: any, node: Node) => {
     const { type, original, hasChildren } = node.data;
-    setSelectedNode(original);
+    setSelectedNode({ ...original, fullPath: node.id });
     setActiveTab('node');
 
     if (type === 'directory' && hasChildren) {
@@ -290,6 +291,13 @@ function App() {
                           : 'Check the Overview tab for project structure details.'}
                       </div>
                     </div>
+
+                    {/* 🔹 Кнопка + описание от LLM для выбранного узла */}
+                    <NodeAiDescription
+                      repoId={repoId}
+                      nodePath={selectedNode.fullPath || selectedNode.name}
+                      nodeType={selectedNode.type === 'directory' ? 'directory' : 'file'}
+                    />
                   </div>
                 </div>
               ) : (
