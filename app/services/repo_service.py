@@ -366,7 +366,7 @@ class RepoService:
                     f"Содержимое: {contents_str}\n\nОтвет:"
                 )
 
-            answer = self.llm.generate(prompt, system_prompt="Кратко, технически грамотно, только на русском.", max_tokens=200).strip()
+            answer = self.llm.generate(prompt, system_prompt="Кратко, технически грамотно, только на русском.", max_tokens=500).strip()
             return {"node_path": node_path, "description": answer.replace("```", "")}
             
         except Exception as e:
