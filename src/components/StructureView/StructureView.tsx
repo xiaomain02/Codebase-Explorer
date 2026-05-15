@@ -26,6 +26,14 @@ export const StructureView: React.FC<StructureViewProps> = ({
     });
   };
 
+  // 🔹 Вычисляет путь к родительской папке
+  const getParentPath = (path: string) => {
+    if (!path || path === '.') return '.';
+    const parts = path.split('/');
+    parts.pop();
+    return parts.join('/') || '.';
+  };
+
   return (
     <div className="info-section">
       {/* AI Summary */}
@@ -84,9 +92,27 @@ export const StructureView: React.FC<StructureViewProps> = ({
           <div className="info-card-header">
             <div className="info-card-title">
               <span>◫</span> Contents
+              {/* 📍 Показываем текущий путь, если не корень */}
+              {currentPath && currentPath !== '.' && (
+                <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--muted)', fontWeight: 400 }}>
+                  ({currentPath})
+                </span>
+              )}
             </div>
           </div>
           <div className="info-card-body">
+            {/* 🔙 Кнопка "Назад" */}
+            {currentPath && currentPath !== '.' && (
+              <div
+                className="folder-item"
+                onClick={() => onFolderClick(getParentPath(currentPath))}
+                style={{ cursor: 'pointer', marginBottom: 12, background: 'var(--bg-secondary, #1a1a1a)', borderRadius: 8, padding: '8px 12px' }}
+              >
+                <span>⬆</span>
+                <div className="folder-item-name" style={{ fontWeight: 500 }}>..</div>
+              </div>
+            )}
+
             {structure.structure.summary && (
               <div className="summary-text" style={{ marginBottom: 12 }}>
                 {structure.structure.summary}
