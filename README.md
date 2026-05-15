@@ -1,202 +1,168 @@
-# Codebase-Explorer
+# Codebase Explorer
+
+Веб-приложение для анализа и визуализации структуры кодовых баз.
 
 ## Введение
 
-Codebase-Explorer - это веб-приложение для анализа и исследования кодовых баз. Проект включает FastAPI бэкенд для обработки репозиториев, парсинга Python файлов и генерации структур папок.
+Codebase Explorer - веб-инструмент для интерактивного исследования любого программного проекта. Пользователь загружает ZIP-архив с кодом, после чего приложение строит интерактивное дерево файловой структуры, анализирует модули, генерирует AI-описания папок и файлов и позволяет задавать вопросы о коде на естественном языке.
+
+Весь AI-анализ выполняется **локально** - код пользователя не покидает машину.
+
+## Быстрый старт
+
+```bash
+git clone https://github.com/xiaomain02/Codebase-Explorer
+cd Codebase-Explorer
+docker compose up --build
+```
+
+После запуска:
+
+- **Фронтенд:** `http://localhost:3000` или `http://<IP-адрес-машины>:3000`
+- **Backend API:** `http://localhost:8000`
+- **Swagger UI:** `http://localhost:8000/docs`
+
+> При первом запуске бэкенд автоматически скачает LLM-модель (~1.9 ГБ).
+> Подождите 2–3 минуты до появления `Application startup complete` в логах.
 
 ## Архитектура
 
-Проект состоит из трех основных компонентов:
-- **Бэкенд**: FastAPI приложение на Python
-- **Фронтенд**: React + TypeScript веб-интерфейс  
-- **LLM**: Сервис для генерации описаний с использованием llama-cpp-python
+Приложение развёртывается через Docker Compose и состоит из четырёх слоёв:
+
+**Nginx (порт 3000)** - раздаёт статику фронтенда, проксирует `/api/` на бэкенд.
+
+**Frontend** - React 18 + TypeScript, собирается в статику при сборке образа.
+
+**Backend (порт 8000)** - FastAPI + Uvicorn, REST API, бизнес-логика, AST-парсинг.
+
+**LLM Service** - llama-cpp-python (Llama 3.2 3B), работает внутри бэкенд-контейнера, грузится лениво при первом запросе.
+
+**Storage** - файловая система + `index.json` для хранения архивов и распакованного кода.
+
+### Структура проекта
+
+```
+Codebase-Explorer/
+├── app/                          # FastAPI-приложение
+│   ├── api/repo.py               # Все эндпоинты (prefix: /api/repos)
+│   ├── core/
+│   │   ├── config.py             # BASE_DIR, лимиты, игнорируемые папки
+│   │   └── exceptions.py         # Кастомные исключения → HTTP-коды
+│   ├── schemas/                  # Pydantic-модели запросов и ответов
+│   ├── services/
+│   │   ├── repo_service.py       # Основная бизнес-логика
+│   │   ├── storage_service.py    # Работа с ФС и index.json
+│   │   └── llm_service.py        # LLM-интеграция (llama-cpp-python)
+│   └── main.py                   # FastAPI app, регистрация роутера
+├── src/                          # React-фронтенд
+│   ├── api/                      # Axios-клиент, типы, вызовы к бэкенду
+│   ├── components/
+│   │   ├── StructureView/        # Панель Overview (summary, модули, папки)
+│   │   ├── QAPanel/              # Q&A с историей вопросов
+│   │   ├── NodeAiDescription/    # LLM-описание выбранного узла
+│   │   └── FolderSummary/        # Описание папки
+│   ├── hooks/useRepo.ts          # Хук управления состоянием репозитория
+│   ├── App.tsx
+│   └── App.css
+├── tests/
+├── storage/                      # Данные (gitignore)
+├── models/                       # LLM-модель (gitignore, ~2 ГБ)
+├── Dockerfile
+├── Dockerfile.frontend
+├── docker-compose.yml
+└── nginx.conf
+```
+
+## REST API
+
+Все эндпоинты под префиксом `/api/repos`. Интерактивная документация — `/docs`.
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| `POST` | `/api/repos/upload` | Загрузка ZIP-архива, возвращает `repo_id` |
+| `GET` | `/api/repos/{id}/tree` | Полное дерево файлов |
+| `GET` | `/api/repos/{id}/modules` | Список модулей по директориям |
+| `GET` | `/api/repos/{id}/summary` | LLM-резюме проекта |
+| `GET` | `/api/repos/{id}/structure[/{path}]` | AST-структура папки: классы, функции, README |
+| `POST` | `/api/repos/{id}/ask` | Вопрос о проекте → ответ LLM |
+| `GET` | `/api/repos/{id}/file/{path}/describe` | LLM-анализ файла |
+| `GET` | `/api/repos/{id}/folder/{path}/describe` | LLM-анализ папки |
+| `GET` | `/health` | Проверка работоспособности |
 
 ## Функциональность
 
-### Реализованная функциональность
-- Загрузка и анализ репозиториев
-- Парсинг Python файлов с извлечением классов, функций и докстрингов
-- Рекурсивная обработка структур папок
-- Интеграция README файлов на уровне папок
-- REST API эндпоинты для получения структур
-- Q&A панель для вопросов о кодовой базе
-- Визуализация структуры кода через интерактивный граф
+### Загрузка архива
+Принимает только `.zip`, проверяет размер (лимит 500 МБ). Защита от path traversal через `.resolve()`. Если в архиве одна корневая папка (GitHub-стиль) - автоматически «проваливается» в неё.
 
-### Интеграция и улучшения компонентов
-- **Парсинг Python файлов**: AST-парсинг для извлечения классов, функций, методов и их документации
-- **Рекурсивные структуры папок**: Поддержка глубокого обхода директорий с правильной вложенностью
-- **Интеграция README**: README файлы читаются и включаются в описания папок
-- **Docker контейнеризация**: Dockerfile, docker-compose.yml для развертывания полного стека
-- **Схемы данных**: Pydantic модели для поддержки рекурсивных структур и README полей
-- **Тестирование**: Тесты для API эндпоинтов
+### Интерактивное дерево
+По умолчанию показываются только папки первого уровня. Клик разворачивает/сворачивает содержимое. Директории - фиолетовые ноды, файлы - зелёные. Поддерживается drag, zoom и pan.
 
-## DevOps: Проделанные действия и исправления
+### LLM-анализ
+При клике на узел автоматически запрашивается описание от LLM. Для файлов возвращает назначение, классы, функции и импорты. Для папок - назначение и содержимое. Кэш описаний хранится в `localStorage`.
 
-### 1. API Routes Mismatch (Фронтенд-Бэкенд коммуникация)
-**Проблема**: Фронтенд обращался к `/api/repos/upload`, но бэкенд был зарегистрирован с префиксом `/repo` (без 's').
+### Q&A
+История вопросов не исчезает - каждый можно свернуть/развернуть. История сохраняется между перезагрузками страницы. Кнопка «Очистить» удаляет всё.
 
-**Решение** (`app/api/repo.py` + `app/main.py`):
-```python
-# Было: router = APIRouter(prefix='/repo', tags=['repo'])
-# Стало: router = APIRouter(prefix='/api/repos', tags=['repo'])
-```
-- Изменён префикс роутера на `/api/repos` для полного совпадения с путями фронтенда
-- Nginx корректно проксирует `/api/` запросы к бэкенду
-- Все API запросы теперь доходят до правильных обработчиков
+### Персистентность сессии
+При обновлении страницы граф, история Q&A и кэш описаний восстанавливаются из `localStorage`. При 404-ошибке (бэкенд перезапущен) - автосброс на страницу загрузки.
 
-### 2. Docker Build: Hash Verification Failure
-**Проблема**: При сборке бэкенда контейнера падала ошибка:
-```
-ERROR: THESE PACKAGES DO NOT MATCH THE HASHES FROM THE REQUIREMENTS FILE
-llama-cpp-python<0.3.0,>=0.2.56 from https://files.pythonhosted.org/packages/...
-Expected sha256 419b041c62dbdb9f7e67883a6ef2f247d583d08417058776be0bff05b4ec9e3d
-Got        d15a0772aed3b6d5461304d799b42926829a88398c490d00e82e1f0cfbf0e021
-```
+## LLM-интеграция
 
-**Решение** (`Dockerfile`):
-- Удалены хеши из `requirements.txt` (они не кэшировались, а пакет скачивается со своим хешем)
-- Исходный pip install вернулся в обычный режим без дополнительных флагов
+Используется локальная модель через `llama-cpp-python`. При первом обращении к LLM модель скачивается из Hugging Face Hub и кэшируется в `/app/models/`.
 
-### 3. Frontend: Отсутствие Q&A и Summary UI
-**Проблема**: Компоненты `QAPanel` и `StructureView` существовали, но не подключались в `App.tsx`.
-Результат:
-- Нельзя было задать вопрос о коде
-- Summary не выводился
-- Структура и модули не показывались
+Параметры: формат GGUF (Q4_K_M), ~1.9 ГБ, контекстное окно 4096 токенов, температура 0.2, выполнение на CPU.
 
-**Решение** (`src/App.tsx`):
-- ✅ Добавлен импорт `useRepo` hook для управления состоянием репозитория
-- ✅ Добавлены импорты компонентов:
-  ```typescript
-  import { useRepo } from './hooks/useRepo';
-  import { StructureView } from './components/StructureView/StructureView';
-  import { QAPanel } from './components/QAPanel/QAPanel';
-  ```
-- ✅ Подключён хук `useRepo(repoId)` для загрузки данных репозитория
-- ✅ Добавлены `StructureView` и `QAPanel` в правую панель для отображения:
-  - Project Summary
-  - Модули проекта
-  - Структуру файлов
-  - Форму для задания вопросов о коде
-- ✅ Добавлена очистка `setAnswer(null)` при загрузке нового репозитория
+## Конфигурация
 
-### 4. TypeScript Compilation Error
-**Проблема**: 
-```
-src/App.tsx(37,5): error TS6133: 'setAnswer' is declared but its value is never read.
-```
+### nginx.conf
+- `proxy_read_timeout 300s` — 5 минут на LLM-генерацию
+- `client_max_body_size 500M` — поддержка крупных архивов
+- `proxy_buffering off` — без буферизации для больших файлов
+- `try_files $uri /index.html` — SPA-роутинг
 
-**Решение** (`src/App.tsx`):
-- Использована переменная `setAnswer` в функции `handleFileUpload` для сброса предыдущего ответа
-- Добавлено `setAnswer(null)` после загрузки нового репозитория
+### Решённые проблемы
 
-### 5. 504 Gateway Timeout при загрузке файлов
-**Проблема**: Nginx возвращал ошибку `504 Gateway Timeout` при POST запросе на `/api/repos/upload`:
-```
-upstream timed out (110: Operation timed out) while reading response header from upstream
-client request body is buffered to a temporary file /var/cache/nginx/client_temp/...
-```
+**504 Gateway Timeout при upload** — nginx timeout был меньше времени обработки. Решение: `proxy_read/send/connect_timeout 300s`.
 
-Причины:
-- Nginx по умолчанию имеет таймауты 60 секунд (слишком мало для больших файлов)
-- Флаг `--reload` в docker-compose.yml замораживал бэкенд при изменениях файлов во время upload
-- Отсутствовала оптимизация буферинга для больших файлов
+**Upload failed** — axios вручную выставлял `Content-Type` без boundary. Решение: убрать явный заголовок, axios ставит его автоматически.
 
-**Решение** (`nginx.conf`, `docker-compose.yml`, `Dockerfile`):
+**Backend не стартует после изменений** — флаг `--reload` прерывал upload. Решение: убрать `--reload` из Dockerfile.
 
-1. **nginx.conf** - добавлены таймауты и оптимизация:
-   ```nginx
-   proxy_connect_timeout 300s;    # Таймаут подключения - 5 минут
-   proxy_send_timeout 300s;       # Таймаут отправки - 5 минут
-   proxy_read_timeout 300s;       # Таймаут чтения ответа - 5 минут
-   client_max_body_size 500M;     # Поддержка файлов до 500MB
-   proxy_buffering off;           # Отключен буферинг для больших файлов
-   proxy_request_buffering off;   # Отключен буферинг запросов
-   ```
+**Бесконечный Loading overview** — `localStorage` хранил устаревший `repoId`. Решение: `useEffect` сбрасывает состояние при 404-ошибке.
 
-2. **docker-compose.yml** - удалены флаги `--reload` и связанные опции:
-   - Перезагрузка при изменениях файлов больше не будет прерывать upload
-   - Бэкенд работает стабильнее во время обработки больших файлов
+## Тестирование
 
-3. **Dockerfile** - удален флаг `--reload` из CMD:
-   - Приложение работает в production режиме
-   - Нет автоматических перезагрузок при изменениях файлов
-
-**Результат**: 
-- ✅ Upload больших файлов теперь работает без таймаутов
-- ✅ Максимальный размер файла: 500MB (как в config.py)
-- ✅ Бэкенд не замораживается во время обработки файлов
-- ✅ Nginx корректно обрабатывает длительные запросы
-
-## Результат после исправлений
-
-✅ **Фронтенд подключен к бэкенду** - все API запросы корректно обрабатываются  
-✅ **Docker контейнеры собираются** без ошибок хешей  
-✅ **UI полностью функционален**:
-  - Графическое дерево структуры кода
-  - Project Summary
-  - Список модулей
-  - Форма Q&A для вопросов о коде
-  - Отображение структуры папок и Python файлов
-
-## Установка и запуск
-
-### Локальная разработка
 ```bash
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+docker compose run --rm backend pytest tests/ -v
 ```
 
-### Docker развертывание
+Тесты используют `pytest` и `TestClient` из FastAPI. Тестовые ZIP-архивы создаются в памяти через `BytesIO`.
+
+Покрытые случаи: успешная загрузка ZIP, загрузка не-ZIP файла (→ 400), полный интеграционный флоу upload → tree → modules → summary → ask, запрос несуществующего `repo_id` (→ 404).
+
+## Полезные команды
+
 ```bash
-docker-compose down
-docker-compose up --build
-```
-- Бэкенд запустится на `http://localhost:8000`
-- Фронтенд запустится на `http://localhost:3000`
-- Nginx проксирует `/api/` запросы к бэкенду
+# Пересборка без кэша
+docker compose down && docker compose build --no-cache && docker compose up -d
 
-## Структура проекта
+# Пересборка только фронтенда
+docker compose build --no-cache frontend && docker compose up -d frontend
 
-```
-├── app/                    # FastAPI приложение
-│   ├── api/               # API эндпоинты (исправлен префикс /api/repos)
-│   ├── core/              # Конфигурация и исключения
-│   ├── schemas/           # Pydantic модели
-│   └── services/          # Бизнес-логика (repo_service, llm_service, storage_service)
-├── src/                   # React фронтенд
-│   ├── components/        # UI компоненты (StructureView, QAPanel, FileTree, etc)
-│   ├── hooks/            # React хуки (useRepo для управления репозиторием)
-│   ├── api/              # API клиент (repos.ts, client.ts, types.ts)
-│   └── App.tsx           # Главный компонент (обновлён с StructureView и QAPanel)
-├── storage/              # Хранение загруженных репозиториев
-├── tests/                # Тесты
-├── Dockerfile            # Контейнер бэкенда (исправлена установка зависимостей)
-├── Dockerfile.frontend   # Контейнер фронтенда
-├── docker-compose.yml    # Оркестрация сервисов
-├── nginx.conf            # Конфигурация nginx (проксирует /api/ к бэкенду)
-└── requirements.txt      # Python зависимости (без хешей)
+# Логи бэкенда
+docker compose logs backend --tail=50 -f
+
+# Запустить тесты
+docker compose run --rm backend pytest tests/ -v
+
+# Сбросить storage
+rm -rf storage/repos/* && echo "{}" > storage/index.json
 ```
 
-## API
+## Стек
 
-- `POST /api/repos/upload` - Загрузка репозитория (ZIP архив)
-- `GET /api/repos/{repo_id}/tree` - Получение дерева структуры
-- `GET /api/repos/{repo_id}/structure[/{path}]` - Получение структуры папки
-- `GET /api/repos/{repo_id}/modules` - Список модулей проекта
-- `GET /api/repos/{repo_id}/summary` - Summary проекта
-- `POST /api/repos/{repo_id}/ask` - Задать вопрос о коде (Q&A)
-- `GET /api/repos/{repo_id}/file/{file_path}/describe` - Описание конкретного файла
+**Backend:** FastAPI 0.115+, Uvicorn, Pydantic v2, llama-cpp-python, huggingface_hub
 
-## Разработка
+**Frontend:** React 18, TypeScript 5, Vite, ReactFlow, axios
 
-Проект использует:
-- **FastAPI** для REST API
-- **Pydantic** для валидации данных
-- **Python AST** для парсинга кода
-- **React 18 + TypeScript** для фронтенда
-- **Vite** для быстрой сборки фронтенда
-- **Docker & Docker Compose** для контейнеризации
-- **Nginx** для reverse proxy и static файлов
-- **llama-cpp-python** для локального LLM (Llama-3.2-3B)
-- **pytest** для тестирования
+**Инфраструктура:** Docker Compose, Nginx stable-alpine, pytest + httpx
