@@ -76,12 +76,27 @@ export const useRepo = (repoId: string) => {
   }, [repoId]);
 
   useEffect(() => {
-    if (repoId) {
-      loadTree();
-      loadStructure();
-      loadSummary();
-      loadModules();
+    if (!repoId) {
+      setSummary(null);
+      setStructure(null);
+      setTree(null);
+      setModules([]);
+      setError(null);
+      setLoading(false);
+      return;
     }
+
+    setSummary(null);
+    setStructure(null);
+    setTree(null);
+    setModules([]);
+    setError(null);
+    setLoading(true);
+
+    loadTree();
+    loadStructure();
+    loadSummary();
+    loadModules();
   }, [repoId]);
 
   return {

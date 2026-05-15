@@ -54,7 +54,7 @@ export const StructureView: React.FC<StructureViewProps> = ({
               {summary.summary}
             </div>
           ) : (
-            <div style={{ padding: '8px 0', color: 'var(--muted, #888)' }}>
+            <div style={{ padding: '16px 0', color: 'var(--muted-2, #64748b)', fontSize: '14px', lineHeight: 1.5, textAlign: 'center' }}>
               Загрузка данных о проекте...
             </div>
           )}

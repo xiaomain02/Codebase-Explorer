@@ -387,53 +387,46 @@ class RepoService:
             tree = self.get_tree(repo_id)
 
             module_names = ', '.join(m.name for m in modules[:5])
-            readme_short = readme[:200].replace('\n', ' ').strip()
-            tree_short = str(tree)[:150] if tree else ''
+            readme_short = readme[:150].replace('\n', ' ').strip()
+            tree_short = str(tree)[:120] if tree else ''
             
             prompt = (
-                "Твоя задача: написать краткое описание проекта на русском языке.\n"
-                "Пиши ЕДИНЫМ связным текстом, а не списком.\n"
-                "Используй правильные падежи и склонения.\n"
-                "НЕ повторяй структуру этого промпта. НЕ пиши '1.', '2.', 'Модули:', 'README:'.\n"
-                "НЕ начинай с 'Проанализировал...', 'На основе...', 'Дано...'.\n"
-                "Просто начни с описания проекта.\n\n"
-                "Пример хорошего ответа:\n"
-                '"Это веб-приложение для управления учебным процессом. Бэкенд написан на FastAPI с использованием SQLAlchemy для работы с базой данных SQLite. Фронтенд реализован на React с библиотекой компонентов Ant Design. Проект поддерживает регистрацию пользователей, создание курсов и отслеживание посещаемости."\n\n'
-                f"Данные о проекте:\n"
-                f"• Модули: {module_names}\n"
-                f"• README: {readme_short}\n"
-                f"• Структура: {tree_short}\n\n"
-                "Ответ (единым текстом, на русском, с правильными склонениями):"
+                f"Контекст проекта: {module_names} | {readme_short} | {tree_short}\n"
+                "Напиши небольшое описание сути проекта на русском языке.\n"
+                "ПРАВИЛА ФОРМАТА:\n"
+                "1. Пиши СТРОГО ОДНИМ СПЛОШНЫМ АБЗАЦЕМ.\n"
+                "2. НЕ используй цифры, маркеры, списки и переносы строк.\n"
+                "3. Начни сразу с сути"
             )
 
-            summary = self.llm.generate(
+            raw_answer = self.llm.generate(
                 prompt,
                 system_prompt="Ты — технический писатель. Отвечай только на русском языке, грамотно, с правильными падежами и склонениями. Пиши связным текстом, без списков и маркеров.",
-                max_tokens=150,
+                max_tokens=250
             ).strip()
 
-            if not summary or summary.startswith(("⚠️", "Ошибка", "Error", "LLM error")):
-                return "⚠️ LLM не смогла сгенерировать описание. Попробуйте обновить страницу."
+            import logging
+            logging.getLogger(__name__).info(f"LLM raw summary: {raw_answer}")
 
-            summary = summary.replace("```", "").replace("**", "").strip()
-            
-            for marker in ["Данные о проекте:", "• Модули:", "• README:", "• Структура:", "Контекст:", "Ответ:"]:
-                if marker in summary:
-                    summary = summary.split(marker)[0].strip()
-            summary = summary.split('\n\n')[0].split('\n')[0].strip()
-            if summary and not summary.endswith('.'):
-                summary = summary.rstrip(',') + '.'
-            
-            if not summary or len(summary) < 20:
-                return "⚠️ LLM вернула невалидный ответ."
-            
-            return summary
+            answer = raw_answer.replace("```", "").replace("**", "").strip()
+
+            for marker in ["Ответ:", "Данные:"]:
+                if answer.startswith(marker):
+                    answer = answer[len(marker):].strip()
+
+            if not answer or len(answer) < 10:
+                return f"Проект включает модули: {module_names}. {'Ознакомьтесь со структурой файлов для деталей.' if tree else ''}"
+
+            if not answer.endswith(('.', '!', '?')):
+                answer += '.'
+
+            return answer
             
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
             logger.error(f"get_summary error: {type(e).__name__}: {e}")
-            return f"⚠️ Ошибка генерации summary: {type(e).__name__}. Проверь логи бэкенда."
+            return f"⚠️ Ошибка генерации summary: {type(e).__name__}."
     
     def ask_about_repo(self, repo_id: str, question: str) -> dict:
             try:
