@@ -7,6 +7,7 @@ interface StructureViewProps {
   modules: ModuleInfo[];
   currentPath: string;
   onFolderClick: (path: string) => void;
+  summaryLoading?: boolean;
 }
 
 export const StructureView: React.FC<StructureViewProps> = ({
@@ -15,6 +16,7 @@ export const StructureView: React.FC<StructureViewProps> = ({
   modules,
   currentPath,
   onFolderClick,
+  summaryLoading = false,
 }) => {
   const [expandedModules, setExpandedModules] = useState<Set<number>>(new Set());
 
@@ -26,7 +28,6 @@ export const StructureView: React.FC<StructureViewProps> = ({
     });
   };
 
-  // 🔹 Вычисляет путь к родительской папке
   const getParentPath = (path: string) => {
     if (!path || path === '.') return '.';
     const parts = path.split('/');
@@ -37,20 +38,28 @@ export const StructureView: React.FC<StructureViewProps> = ({
   return (
     <div className="info-section">
       {/* AI Summary */}
-      {summary && (
-        <div className="info-card">
-          <div className="info-card-header">
-            <div className="info-card-title">
-              <span></span> Project Summary
-            </div>
+      <div className="info-card">
+        <div className="info-card-header">
+          <div className="info-card-title">
+            <span></span> Project Summary
           </div>
-          <div className="info-card-body">
+        </div>
+        <div className="info-card-body">
+          {summaryLoading ? (
+            <div style={{ padding: '8px 0', color: 'var(--muted, #888)', fontStyle: 'italic' }}>
+              ⏳ Генерация AI-саммари... (обычно 10–30 сек)
+            </div>
+          ) : summary ? (
             <div className="summary-text" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
               {summary.summary}
             </div>
-          </div>
+          ) : (
+            <div style={{ padding: '8px 0', color: 'var(--muted, #888)' }}>
+              Загрузка данных о проекте...
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Modules */}
       {modules.length > 0 && (
@@ -92,7 +101,6 @@ export const StructureView: React.FC<StructureViewProps> = ({
           <div className="info-card-header">
             <div className="info-card-title">
               <span>◫</span> Contents
-              {/* 📍 Показываем текущий путь, если не корень */}
               {currentPath && currentPath !== '.' && (
                 <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--muted)', fontWeight: 400 }}>
                   ({currentPath})
@@ -201,9 +209,8 @@ export const StructureView: React.FC<StructureViewProps> = ({
             </div>
           </div>
           <div className="info-card-body">
-            <pre className="readme-pre">
-              {structure.readme.slice(0, 1500)}
-              {structure.readme.length > 1500 ? '\n…' : ''}
+            <pre className="readme-pre" style={{ whiteSpace: 'pre-wrap', maxHeight: '70vh', overflowY: 'auto', padding: '12px' }}>
+              {structure.readme}
             </pre>
           </div>
         </div>
