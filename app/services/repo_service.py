@@ -400,71 +400,55 @@ class RepoService:
             logger = logging.getLogger(__name__)
             logger.error(f"get_summary error: {type(e).__name__}: {e}")
             return f"⚠️ Ошибка генерации summary: {type(e).__name__}. Проверь логи бэкенда."
-        
-    # def ask_about_repo(self, repo_id: str, question: str) -> dict:
-    #     cleaned = question.strip()
-    #     if not cleaned:
-    #         raise InvalidQuestionError('Question must not be empty')
-
-    #     extracted = Path(self.storage.get_repo_meta(repo_id)['extracted_path'])
-    #     matched_files: list[str] = []
-    #     keywords = [token.lower() for token in cleaned.replace('?', ' ').split() if len(token) > 2]
-    #     for path in extracted.rglob('*'):
-    #         if not path.is_file():
-    #             continue
-    #         rel = str(path.relative_to(extracted))
-    #         lower_rel = rel.lower()
-    #         if any(keyword in lower_rel for keyword in keywords):
-    #             matched_files.append(rel)
-    #         if len(matched_files) >= 3:
-    #             break
-
-    #     if matched_files:
-    #         answer = (
-    #             'Для ответа на вопрос backend нашёл несколько потенциально релевантных файлов. '
-    #             'Сейчас это простая эвристика по именам файлов; позже сюда можно подключить retrieval + LLM.'
-    #         )
-    #     else:
-    #         some_files = [str(path.relative_to(extracted)) for path in extracted.rglob('*') if path.is_file()][:3]
-    #         matched_files = some_files
-    #         answer = (
-    #             'Точного совпадения по именам файлов не найдено. '
-    #             'В MVP backend вернул несколько файлов проекта, которые можно использовать как стартовый контекст для LLM.'
-    #         )
-
-    #     return {
-    #         'question': cleaned,
-    #         'answer': answer,
-    #         'sources': matched_files,
-    #     }
     
     def ask_about_repo(self, repo_id: str, question: str) -> dict:
-        if not self.llm:
-            raise RuntimeError("LLM service not initialized")
-            
-        # Собираем контекст: дерево + модули + README
-        tree = self.get_tree(repo_id)
-        modules = self.get_modules(repo_id)
-        readme = self.get_readme(repo_id) if hasattr(self, 'get_readme') else ""
-        
-        context_parts = [
-            f"📁 Project Structure:\n{tree}",
-            f"📦 Modules:\n{modules}",
-        ]
-        if readme:
-            context_parts.append(f"📖 README:\n{readme}")
-            
-        full_context = "\n\n---\n\n".join(context_parts)
-        safe_context = self.llm.safe_truncate(full_context)
-        
-        prompt = f"Контекст проекта:\n{safe_context}\n\nВопрос пользователя: {question}"
-        answer = self.llm.generate(prompt)
-        
-        return {
-            "question": question,
-            "answer": answer,
-            "sources": ["structure", "modules", "readme"] if readme else ["structure", "modules"]
-        }
+            try:
+                if not self.llm:
+                    return {"question": question, "answer": "⚠️ LLM сервис не инициализирован.", "sources": []}
+                
+                tree = self.get_tree(repo_id)
+                modules = self.get_modules(repo_id)
+                readme = self._read_readme_from_repo_id(repo_id) or ""
+                
+                tree_str = str(tree)[:500]
+                modules_str = ", ".join(m.name for m in modules[:3]) or "не указаны"
+                readme_str = (readme[:700] + "...") if len(readme) > 300 else readme or "отсутствует"
+                
+                prompt = (
+                    "Ты — опытный технический специалист. Твоя задача — дать подробный и грамотный ответ на вопрос о проекте.\n\n"
+                    "ИНСТРУКЦИИ:\n"
+                    "1. Отвечай СТРОГО на русском языке. Используй правильный технический стиль, соблюдай падежи и склонения. Проверяй внимательно, соблюдены ли правила русского языка\n"
+                    "2. Ответ должен быть содержательным (3-5 предложений или аккуратный список). Не ограничивайся одним предложением.\n"
+                    "3. Опирайся только на данные из контекста. Если информации недостаточно, честно сообщи об этом.\n"
+                    "4. Начинай с прямого ответа на вопрос, затем добавляй детали или примеры из контекста.\n\n"
+                    f"📁 Структура: {tree_str}\n\n"
+                    f"📦 Модули: {modules_str}\n\n"
+                    f"📖 README: {readme_str}\n\n"
+                    f"❓ Вопрос: {question}\n\n"
+                    "ТВОЙ ПОДРОБНЫЙ ОТВЕТ:"
+                )
+                
+                answer = self.llm.generate(
+                    prompt,
+                    system_prompt="Отвечай четко и только на русском языке.",
+                    max_tokens=500
+                )
+                
+                return {
+                    "question": question,
+                    "answer": answer.strip().replace("```", ""),
+                    "sources": ["structure", "modules", "readme"] if readme else ["structure", "modules"]
+                }
+                
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"ask_about_repo crashed: {type(e).__name__} - {e}")
+                return {
+                    "question": question,
+                    "answer": f"⚠️ Ошибка обработки: {type(e).__name__}",
+                    "sources": []
+                }
 
     def describe_file(self, repo_id: str, file_path: str) -> dict:
             """
